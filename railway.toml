@@ -1,0 +1,9 @@
+[deploy]
+startCommand = "python TypeKeeper.py"
+
+[build]
+builder = "nixpacks"
+
+[[services]]
+name = "TypeKeeper Bot"
+type = "worker"
