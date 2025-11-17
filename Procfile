@@ -1,1 +1,1 @@
-worker: python TypeKeeper.py
+worker: python test_bot.py

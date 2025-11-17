@@ -20,8 +20,12 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 
-# Получаем токен из переменных окружения (для Railway) или используем по умолчанию
-TOKEN = os.getenv('BOT_TOKEN', '8240746309:AAEqhznhHLgSd2K0QMpmdBQHMHIyJNdrYG8')
+# Получаем токен из переменных окружения
+TOKEN = os.getenv('BOT_TOKEN')
+if not TOKEN:
+    logging.error("Токен бота не установлен! Установите переменную BOT_TOKEN в настройках Railway.")
+    exit(1)
+
 DATA_FILE = 'data.json'
 
 # Состояния для ConversationHandler
