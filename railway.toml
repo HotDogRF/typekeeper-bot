@@ -2,7 +2,7 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "python debug_env.py"
+startCommand = "python TypeKeeper.py"
 
 [environments.production.vars]
 BOT_TOKEN = "8240746309:AAEqhznhHLgSd2K0QMpmdBQHMHIyJNdrYG8"
