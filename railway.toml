@@ -1,9 +1,8 @@
-[deploy]
-startCommand = "python TypeKeeper.py"
-
 [build]
 builder = "nixpacks"
 
-[[services]]
-name = "TypeKeeper Bot"
-type = "worker"
+[deploy]
+startCommand = "python debug_env.py"
+
+[environments.production.vars]
+BOT_TOKEN = "8240746309:AAEqhznhHLgSd2K0QMpmdBQHMHIyJNdrYG8"
