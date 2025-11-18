@@ -617,11 +617,15 @@ def main() -> None:
     # Отдельные обработчики для удаления, чтобы они работали вне диалогов
     application.add_handler(CallbackQueryHandler(delete_item_callback, pattern="^delete_"))
 
-    # Запускаем фоновые задачи для напоминаний
-    job_queue = application.job_queue
-    job_queue.run_repeating(schedule_reminder_job, interval=60, first=5)
-    job_queue.run_repeating(deadline_reminder_job, interval=60, first=10)
-
+    # Запускаем фоновые задачи для напоминаний (если JobQueue доступен)
+    if application.job_queue:
+        job_queue = application.job_queue
+        job_queue.run_repeating(schedule_reminder_job, interval=60, first=5)
+        job_queue.run_repeating(deadline_reminder_job, interval=60, first=10)
+        print("✅ JobQueue запущен для напоминаний")
+    else:
+        print("⚠️ JobQueue недоступен. Напоминания не будут работать.")
+        
     # 🔧 ЗАПУСК НА RAILWAY (исправленная версия)
     port = int(os.environ.get('PORT', 8080))
     webhook_url = os.environ.get('RAILWAY_STATIC_URL')
