@@ -541,10 +541,13 @@ async def deadline_reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 def main() -> None:
     """Основная функция для запуска бота."""
-    # Проверяем, что токен установлен
-    if not TOKEN or TOKEN == '8240746309:AAEqhznhHLgSd2K0QMpmdBQHMHIyJNdrYG8':
-        logging.error("Токен бота не установлен! Установите переменную BOT_TOKEN в настройках Railway.")
+    # Упрощенная проверка токена
+    if not TOKEN:
+        logging.error("❌ Токен бота не установлен!")
+        print("❌ Токен бота не установлен! Проверьте переменную BOT_TOKEN в Railway.")
         return
+    
+    print(f"✅ Токен получен, запускаю бота...")
     
     application = Application.builder().token(TOKEN).build()
     
@@ -619,9 +622,27 @@ def main() -> None:
     job_queue.run_repeating(schedule_reminder_job, interval=60, first=5)
     job_queue.run_repeating(deadline_reminder_job, interval=60, first=10)
 
-    # Запускаем бота
-    logging.info("Бот запущен на Railway!")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # 🔧 ЗАПУСК НА RAILWAY (исправленная версия)
+    port = int(os.environ.get('PORT', 8080))
+    webhook_url = os.environ.get('RAILWAY_STATIC_URL')
+
+    if webhook_url:
+        # Используем вебхук на Railway
+        logging.info("🚀 Запуск через вебхук на Railway...")
+        application.run_webhook(
+            listen="0.0.0.0",
+            port=port,
+            url_path=TOKEN,
+            webhook_url=f"{webhook_url}/{TOKEN}",
+            drop_pending_updates=True
+        )
+    else:
+        # Используем polling для локальной разработки
+        logging.info("🚀 Запуск через polling...")
+        application.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True
+        )
 
 if __name__ == "__main__":
     main()
