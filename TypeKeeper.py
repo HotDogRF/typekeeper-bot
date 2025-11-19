@@ -554,15 +554,15 @@ async def deadline_reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             except (ValueError, KeyError) as e:
                 logging.error(f"Ошибка в данных дедлайна для пользователя {user_id}: {e}")
 
+# ... весь твой предыдущий код ...
+
 def main() -> None:
     # Инициализируем базу данных
     init_database()
 
     """Основная функция для запуска бота."""
-    # Упрощенная проверка токена
     if not TOKEN:
         logging.error("❌ Токен бота не установлен!")
-        print("❌ Токен бота не установлен! Проверьте переменную BOT_TOKEN в Railway.")
         return
     
     print(f"✅ Токен получен, запускаю бота...")
@@ -644,7 +644,7 @@ def main() -> None:
     else:
         print("⚠️ JobQueue недоступен. Напоминания не будут работать.")
         
-    # 🔧 ЗАПУСК НА RAILWAY (исправленная версия)
+    # 🔧 ЗАПУСК НА RAILWAY - ТОЛЬКО WEBHOOK
     port = int(os.environ.get('PORT', 8080))
     webhook_url = os.environ.get('RAILWAY_STATIC_URL')
 
@@ -659,12 +659,22 @@ def main() -> None:
             drop_pending_updates=True
         )
     else:
-        # Используем polling для локальной разработки
-        logging.info("🚀 Запуск через polling...")
-        application.run_polling(
-            allowed_updates=Update.ALL_TYPES,
-            drop_pending_updates=True
-        )
+        # ⚠️ НИКОГДА НЕ ИСПОЛЬЗУЕМ POLLING НА RAILWAY
+        logging.info("💤 Railway: отключаю polling, использую только вебхук")
+        # Просто запускаем веб-сервер для приема вебхуков
+        from flask import Flask, request
+        app = Flask(__name__)
+        
+        @app.route(f'/{TOKEN}', methods=['POST'])
+        def webhook():
+            application.update_queue.put(request.get_json())
+            return 'OK'
+            
+        @app.route('/')
+        def home():
+            return 'Bot is running on Railway with webhook!'
+            
+        app.run(host='0.0.0.0', port=port)
 
 if __name__ == "__main__":
     main()
