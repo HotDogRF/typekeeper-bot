@@ -23,20 +23,14 @@ def get_db_connection():
             print("✅ Успешно подключились к PostgreSQL на Railway")
             return conn
         else:
-            # Локальная разработка (если запускаешь на своем компьютере)
-            conn = psycopg2.connect(
-                host="localhost",
-                database="typekeeper",
-                user="postgres",
-                password="password",
-                port="5432"
-            )
-            print("✅ Успешно подключились к локальной PostgreSQL")
-            return conn
+            # Если нет DATABASE_URL, возвращаем None
+            print("❌ DATABASE_URL не установлена")
+            return None
     except Exception as e:
         print(f"❌ Ошибка подключения к БД: {e}")
         return None
 
+# ... остальные функции (init_database, save_user_data, load_user_data) остаются как были ...
 def init_database():
     """Создает таблицу если её нет"""
     conn = get_db_connection()
