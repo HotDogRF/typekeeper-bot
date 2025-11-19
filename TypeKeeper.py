@@ -644,7 +644,7 @@ def main() -> None:
     else:
         print("⚠️ JobQueue недоступен. Напоминания не будут работать.")
         
-    # 🔧 ЗАПУСК НА RAILWAY - ТОЛЬКО WEBHOOK
+    # 🔧 ЗАПУСК НА RAILWAY - ПРОСТОЙ ВАРИАНТ
     port = int(os.environ.get('PORT', 8080))
     webhook_url = os.environ.get('RAILWAY_STATIC_URL')
 
@@ -659,22 +659,11 @@ def main() -> None:
             drop_pending_updates=True
         )
     else:
-        # ⚠️ НИКОГДА НЕ ИСПОЛЬЗУЕМ POLLING НА RAILWAY
-        logging.info("💤 Railway: отключаю polling, использую только вебхук")
-        # Просто запускаем веб-сервер для приема вебхуков
-        from flask import Flask, request
-        app = Flask(__name__)
-        
-        @app.route(f'/{TOKEN}', methods=['POST'])
-        def webhook():
-            application.update_queue.put(request.get_json())
-            return 'OK'
-            
-        @app.route('/')
-        def home():
-            return 'Bot is running on Railway with webhook!'
-            
-        app.run(host='0.0.0.0', port=port)
+        # ⚠️ ПРОСТО ЖДЕМ - НИЧЕГО НЕ ДЕЛАЕМ
+        logging.info("💤 Railway: жду вебхук запросы...")
+        # Просто ждем чтобы контейнер не закрывался
+        while True:
+            time.sleep(10)
 
 if __name__ == "__main__":
     main()
