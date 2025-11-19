@@ -1,40 +1,69 @@
-import psycopg2
 import os
+import psycopg2
 import json
-import logging
+from urllib.parse import urlparse
 
 def get_db_connection():
-    """Подключается к базе данных"""
+    """Подключается к PostgreSQL через DATABASE_URL"""
     try:
-        return psycopg2.connect(os.getenv('DATABASE_URL'))
+        # Для Railway
+        database_url = os.environ.get('DATABASE_URL')
+        
+        if database_url:
+            # Парсим URL для Railway
+            result = urlparse(database_url)
+            conn = psycopg2.connect(
+                host=result.hostname,
+                database=result.path[1:],
+                user=result.username,
+                password=result.password,
+                port=result.port,
+                sslmode='require'
+            )
+            print("✅ Успешно подключились к PostgreSQL на Railway")
+            return conn
+        else:
+            # Локальная разработка (если запускаешь на своем компьютере)
+            conn = psycopg2.connect(
+                host="localhost",
+                database="typekeeper",
+                user="postgres",
+                password="password",
+                port="5432"
+            )
+            print("✅ Успешно подключились к локальной PostgreSQL")
+            return conn
     except Exception as e:
-        logging.error(f"Ошибка подключения к БД: {e}")
+        print(f"❌ Ошибка подключения к БД: {e}")
         return None
 
 def init_database():
-    """Создает таблицы если их нет"""
+    """Создает таблицу если её нет"""
     conn = get_db_connection()
     if not conn:
-        return
+        return False
         
     try:
         cur = conn.cursor()
         cur.execute('''
             CREATE TABLE IF NOT EXISTS users (
-                user_id TEXT PRIMARY KEY,
-                schedule JSONB DEFAULT '[]',
-                deadlines JSONB DEFAULT '[]'
+                user_id BIGINT PRIMARY KEY,
+                schedule JSONB,
+                deadlines JSONB,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         conn.commit()
-        print("✅ База данных готова")
+        print("✅ Таблица users создана или уже существует")
+        return True
     except Exception as e:
-        print(f"❌ Ошибка БД: {e}")
+        print(f"❌ Ошибка создания таблицы: {e}")
+        return False
     finally:
         conn.close()
 
 def save_user_data(user_id, schedule, deadlines):
-    """Сохраняет данные пользователя"""
+    """Сохраняет данные пользователя в базу данных"""
     conn = get_db_connection()
     if not conn:
         return False
@@ -49,16 +78,19 @@ def save_user_data(user_id, schedule, deadlines):
                 schedule = EXCLUDED.schedule,
                 deadlines = EXCLUDED.deadlines
         ''', (user_id, json.dumps(schedule), json.dumps(deadlines)))
+        
         conn.commit()
+        print(f"✅ Данные пользователя {user_id} сохранены в БД")
         return True
+        
     except Exception as e:
         print(f"❌ Ошибка сохранения: {e}")
         return False
     finally:
         conn.close()
 
-def load_user_data(user_id):
-    """Загружает данные пользователя"""
+async def load_user_data(user_id):
+    """Загружает данные пользователя из базы данных"""
     conn = get_db_connection()
     if not conn:
         return {'schedule': [], 'deadlines': []}
@@ -69,9 +101,14 @@ def load_user_data(user_id):
         result = cur.fetchone()
         
         if result:
-            return {'schedule': result[0] or [], 'deadlines': result[1] or []}
+            schedule = result[0] if result[0] else []
+            deadlines = result[1] if result[1] else []
+            print(f"✅ Данные пользователя {user_id} загружены из БД")
+            return {'schedule': schedule, 'deadlines': deadlines}
         else:
+            print(f"✅ Пользователь {user_id} не найден, возвращаем пустые данные")
             return {'schedule': [], 'deadlines': []}
+            
     except Exception as e:
         print(f"❌ Ошибка загрузки: {e}")
         return {'schedule': [], 'deadlines': []}
