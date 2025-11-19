@@ -638,22 +638,12 @@ def main() -> None:
     port = int(os.environ.get('PORT', 8080))
     webhook_url = os.environ.get('RAILWAY_STATIC_URL')
 
-    if webhook_url:
-        # Используем вебхук на Railway
-        logging.info("🚀 Запуск через вебхук на Railway...")
-        application.run_webhook(
-            listen="0.0.0.0",
-            port=port,
-            url_path=TOKEN,
-            webhook_url=f"{webhook_url}/{TOKEN}",
-            drop_pending_updates=True
-        )
-    else:
-        # Используем polling для локальной разработки
-        logging.info("🚀 Запуск через polling...")
-        application.run_polling(
-            allowed_updates=Update.ALL_TYPES,
-            drop_pending_updates=True
-        )
+
+    # Используем polling для локальной разработки
+    logging.info("🚀 Запуск через polling...")
+    application.run_polling(
+        allowed_updates=Update.ALL_TYPES,
+        drop_pending_updates=True
+    )
 if __name__ == "__main__":
     main()
