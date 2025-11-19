@@ -50,6 +50,18 @@ WEEKDAYS = [
     "понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"
 ]
 
+# Маппинг английских дней недели на русские
+RUSSIAN_WEEKDAYS = {
+    'monday': 'понедельник',
+    'tuesday': 'вторник', 
+    'wednesday': 'среда',
+    'thursday': 'четверг',
+    'friday': 'пятница',
+    'saturday': 'суббота',
+    'sunday': 'воскресенье'
+}
+
+
 # --- Хелперы для работы с локальными данными ---
 
 def load_data():
@@ -66,33 +78,6 @@ def save_data(data):
     """Сохраняет данные в локальный JSON-файл."""
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
-
-
-def save_user_data(user_id, schedule, deadlines):
-    """Сохраняет данные пользователя в базу данных"""
-    conn = get_db_connection()
-    if not conn:
-        return False
-        
-    try:
-        cur = conn.cursor()
-        cur.execute('''
-            INSERT INTO users (user_id, schedule, deadlines)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (user_id) 
-            DO UPDATE SET 
-                schedule = EXCLUDED.schedule,
-                deadlines = EXCLUDED.deadlines
-        ''', (user_id, json.dumps(schedule), json.dumps(deadlines)))
-        
-        conn.commit()
-        return True
-        
-    except Exception as e:
-        print(f"❌ Ошибка сохранения: {e}")
-        return False
-    finally:
-        conn.close()
 
 async def get_schedule(user_id):
     """Получает расписание пользователя."""
@@ -507,7 +492,11 @@ async def schedule_reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Проверяет расписание и отправляет напоминания."""
     data = load_data()
     now = datetime.now()
-    current_day = now.strftime('%A').lower()
+    
+    # Исправлено: конвертируем английский день в русский
+    current_day_eng = now.strftime('%A').lower()
+    current_day = RUSSIAN_WEEKDAYS.get(current_day_eng, current_day_eng)
+    
     current_time_minutes = now.hour * 60 + now.minute
 
     for user_id, user_data in data.items():
@@ -660,11 +649,9 @@ def main() -> None:
             drop_pending_updates=True
         )
     else:
-        # ⚠️ ПРОСТО ЖДЕМ - НИЧЕГО НЕ ДЕЛАЕМ
-        logging.info("💤 Railway: жду вебхук запросы...")
-        # Просто ждем чтобы контейнер не закрывался
-        while True:
-            time.sleep(10)
-
-if __name__ == "__main__":
-    main()
+        # Используем polling для локальной разработки
+        logging.info("🚀 Запуск через polling...")
+        application.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True
+        )
