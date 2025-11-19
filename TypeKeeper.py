@@ -1,3 +1,4 @@
+
 import logging
 import asyncio
 import json
@@ -14,6 +15,7 @@ from telegram.ext import (
     filters,
     CallbackQueryHandler,
 )
+from database import init_database, save_user_data, load_user_data, get_db_connection
 
 # Включаем логирование
 logging.basicConfig(
@@ -64,44 +66,57 @@ def save_data(data):
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
-def get_user_data(user_id):
-    """Получает данные конкретного пользователя."""
-    data = load_data()
-    return data.get(str(user_id), {'schedule': [], 'deadlines': []})
 
-def update_user_data(user_id, user_data):
-    """Обновляет данные конкретного пользователя и сохраняет файл."""
-    data = load_data()
-    data[str(user_id)] = user_data
-    save_data(data)
+def save_user_data(user_id, schedule, deadlines):
+    """Сохраняет данные пользователя в базу данных"""
+    conn = get_db_connection()
+    if not conn:
+        return False
+        
+    try:
+        cur = conn.cursor()
+        cur.execute('''
+            INSERT INTO users (user_id, schedule, deadlines)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (user_id) 
+            DO UPDATE SET 
+                schedule = EXCLUDED.schedule,
+                deadlines = EXCLUDED.deadlines
+        ''', (user_id, json.dumps(schedule), json.dumps(deadlines)))
+        
+        conn.commit()
+        return True
+        
+    except Exception as e:
+        print(f"❌ Ошибка сохранения: {e}")
+        return False
+    finally:
+        conn.close()
 
 async def get_schedule(user_id):
     """Получает расписание пользователя."""
-    user_data = get_user_data(user_id)
+    user_data = await load_user_data(user_id)
     return user_data.get('schedule', [])
 
 async def get_deadlines(user_id):
     """Получает дедлайны пользователя."""
-    user_data = get_user_data(user_id)
+    user_data = await load_user_data(user_id)
     return user_data.get('deadlines', [])
 
 async def add_item(user_id, collection_name, item):
-    """Добавляет новый элемент в расписание или дедлайны."""
-    user_data = get_user_data(user_id)
+    user_data = await load_user_data(user_id)                    # ← изменили
     user_data[collection_name].append(item)
-    update_user_data(user_id, user_data)
+    save_user_data(user_id, user_data['schedule'], user_data['deadlines'])  # ← изменили
 
 async def update_item(user_id, collection_name, item_index, item):
-    """Обновляет существующий элемент."""
-    user_data = get_user_data(user_id)
+    user_data = await load_user_data(user_id)                    # ← изменили
     user_data[collection_name][item_index] = item
-    update_user_data(user_id, user_data)
+    save_user_data(user_id, user_data['schedule'], user_data['deadlines'])  # ← изменили
 
 async def delete_item(user_id, collection_name, item_index):
-    """Удаляет элемент."""
-    user_data = get_user_data(user_id)
+    user_data = await load_user_data(user_id)                    # ← изменили
     del user_data[collection_name][item_index]
-    update_user_data(user_id, user_data)
+    save_user_data(user_id, user_data['schedule'], user_data['deadlines'])  # ← изменили
 
 # --- Клавиатуры ---
 
@@ -394,7 +409,7 @@ async def update_schedule_value_from_text(update: Update, context: ContextTypes.
             await update.message.reply_text("Пожалуйста, введите числовое значение для напоминания.", reply_markup=get_main_keyboard())
             return EDIT_SCHEDULE_VALUE
         
-    user_data = get_user_data(user_id)
+    user_data = await load_user_data(user_id)
     # Check if item_index is valid
     if item_index >= len(user_data['schedule']):
         await update.message.reply_text("Произошла ошибка. Пожалуйста, начните редактирование заново.", reply_markup=get_main_keyboard())
@@ -402,7 +417,7 @@ async def update_schedule_value_from_text(update: Update, context: ContextTypes.
         
     item = user_data['schedule'][item_index]
     item[field_to_edit] = new_value
-    update_user_data(user_id, user_data)
+    save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
     
     await update.message.reply_text("Расписание успешно обновлено!", reply_markup=get_main_keyboard())
     return ConversationHandler.END
@@ -457,14 +472,14 @@ async def update_deadline_value_from_text(update: Update, context: ContextTypes.
             await update.message.reply_text("Пожалуйста, введите числовое значение для напоминания.", reply_markup=get_main_keyboard())
             return EDIT_DEADLINE_VALUE
 
-    user_data = get_user_data(user_id)
+    user_data = await load_user_data(user_id)
     if item_index >= len(user_data['deadlines']):
         await update.message.reply_text("Произошла ошибка. Пожалуйста, начните редактирование заново.", reply_markup=get_main_keyboard())
         return ConversationHandler.END
 
     item = user_data['deadlines'][item_index]
     item[field_to_edit] = new_value
-    update_user_data(user_id, user_data)
+    save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
     
     await update.message.reply_text("Дедлайн успешно обновлен!", reply_markup=get_main_keyboard())
     return ConversationHandler.END
@@ -540,6 +555,9 @@ async def deadline_reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
                 logging.error(f"Ошибка в данных дедлайна для пользователя {user_id}: {e}")
 
 def main() -> None:
+    # Инициализируем базу данных
+    init_database()
+
     """Основная функция для запуска бота."""
     # Упрощенная проверка токена
     if not TOKEN:
