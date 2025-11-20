@@ -3,6 +3,7 @@ import os
 import asyncio
 import logging
 import json
+import threading
 from datetime import datetime, timedelta
 from collections import defaultdict
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
@@ -543,6 +544,7 @@ def index():
     return "Bot is running with webhooks!"
 
 @app.route('/webhook/' + TOKEN, methods=['POST'])
+@app.route('/webhook/' + TOKEN, methods=['POST'])
 def webhook():
     """Endpoint для получения обновлений от Telegram"""
     try:
@@ -558,14 +560,9 @@ def webhook():
         
         update = Update.de_json(json_data, application.bot)
         
-        async def process():
-            try:
-                await application.process_update(update)
-                logger.info("Update processed successfully")
-            except Exception as e:
-                logger.error(f"Error processing update: {e}")
-        
-        asyncio.create_task(process())
+        # 🔥 ПРОСТОЕ РЕШЕНИЕ: Используем встроенную очередь обновлений
+        application.update_queue.put_nowait(update)
+        logger.info("Update added to queue successfully")
         
         return 'ok'
         
@@ -608,12 +605,28 @@ def setup_webhook():
         logger.error(f"Failed to set webhook: {e}")
         return False
 
+def start_background_tasks():
+    """Запускает фоновые задачи для обработки обновлений"""
+    async def run_application():
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling()  # Запускаем обработку очереди
+        logger.info("Background tasks started")
+    
+    # Запускаем в фоне
+    thread = threading.Thread(target=lambda: asyncio.run(run_application()))
+    thread.daemon = True
+    thread.start()
+
 if __name__ == '__main__':
     # Инициализируем базу данных
     init_database()
     
     # Регистрируем обработчики
     register_handlers()
+    
+    # 🔥 ЗАПУСКАЕМ ФОНОВЫЕ ЗАДАЧИ
+    start_background_tasks()
     
     # Устанавливаем webhook
     if setup_webhook():
