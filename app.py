@@ -544,7 +544,6 @@ def index():
     return "Bot is running with webhooks!"
 
 @app.route('/webhook/' + TOKEN, methods=['POST'])
-@app.route('/webhook/' + TOKEN, methods=['POST'])
 def webhook():
     """Endpoint для получения обновлений от Telegram"""
     try:
@@ -560,16 +559,25 @@ def webhook():
         
         update = Update.de_json(json_data, application.bot)
         
-        # 🔥 ПРОСТОЕ РЕШЕНИЕ: Используем встроенную очередь обновлений
-        application.update_queue.put_nowait(update)
-        logger.info("Update added to queue successfully")
+        # 🔥 ПРОСТОЕ РЕШЕНИЕ: Синхронная обработка
+        async def process():
+            try:
+                await application.process_update(update)
+                logger.info("Update processed successfully")
+            except Exception as e:
+                logger.error(f"Error processing update: {e}")
+        
+        # Запускаем в отдельном event loop
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(process())
+        loop.close()
         
         return 'ok'
         
     except Exception as e:
         logger.error(f"Error in webhook: {str(e)}")
         return 'error', 500
-
 def setup_webhook():
     """Устанавливает webhook"""
     try:
@@ -605,18 +613,6 @@ def setup_webhook():
         logger.error(f"Failed to set webhook: {e}")
         return False
 
-def start_background_tasks():
-    """Запускает фоновые задачи для обработки обновлений"""
-    async def run_application():
-        await application.initialize()
-        await application.start()
-        await application.updater.start_polling()  # Запускаем обработку очереди
-        logger.info("Background tasks started")
-    
-    # Запускаем в фоне
-    thread = threading.Thread(target=lambda: asyncio.run(run_application()))
-    thread.daemon = True
-    thread.start()
 
 if __name__ == '__main__':
     # Инициализируем базу данных
@@ -624,9 +620,6 @@ if __name__ == '__main__':
     
     # Регистрируем обработчики
     register_handlers()
-    
-    # 🔥 ЗАПУСКАЕМ ФОНОВЫЕ ЗАДАЧИ
-    start_background_tasks()
     
     # Устанавливаем webhook
     if setup_webhook():
