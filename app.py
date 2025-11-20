@@ -620,6 +620,16 @@ if __name__ == '__main__':
     # Регистрируем обработчики
     register_handlers()
     
+    # 🔥 ИНИЦИАЛИЗИРУЕМ APPLICATION (ДОБАВЬ ЭТОТ БЛОК)
+    async def init_app():
+        await application.initialize()
+        logger.info("✅ Application initialized successfully")
+    
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(init_app())
+    loop.close()
+    
     # Устанавливаем webhook
     if setup_webhook():
         logger.info("✅ Bot started with webhooks")
