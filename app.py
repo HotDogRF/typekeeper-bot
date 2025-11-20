@@ -15,7 +15,7 @@ from telegram.ext import (
     filters,
     CallbackQueryHandler,
 )
-from database import init_database, save_user_data, load_user_data, get_db_connection
+from database import init_database, save_user_data, load_user_data
 
 app = Flask(__name__)
 
@@ -147,7 +147,7 @@ async def add_schedule_reminder(update: Update, context: ContextTypes.DEFAULT_TY
         context.user_data['schedule_data']['reminderBefore'] = reminder_minutes
         user_id = str(update.message.from_user.id)
         
-        user_data = load_user_data(user_id)
+        user_data = await load_user_data(user_id)
         user_data['schedule'].append(context.user_data['schedule_data'])
         save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
         
@@ -192,7 +192,7 @@ async def add_deadline_reminder(update: Update, context: ContextTypes.DEFAULT_TY
         context.user_data['deadline_data']['reminderBefore'] = reminder_minutes
         user_id = str(update.message.from_user.id)
         
-        user_data = load_user_data(user_id)
+        user_data = await load_user_data(user_id)
         user_data['deadlines'].append(context.user_data['deadline_data'])
         save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
         
@@ -202,35 +202,35 @@ async def add_deadline_reminder(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("Пожалуйста, введите числовое значение.", reply_markup=get_main_keyboard())
         return ADD_DEADLINE_REMINDER
 
-def get_schedule(user_id):
+async def get_schedule(user_id):
     """Получает расписание пользователя."""
-    user_data = load_user_data(user_id)
+    user_data = await load_user_data(user_id)
     return user_data.get('schedule', [])
 
-def get_deadlines(user_id):
+async def get_deadlines(user_id):
     """Получает дедлайны пользователя."""
-    user_data = load_user_data(user_id)
+    user_data = await load_user_data(user_id)
     return user_data.get('deadlines', [])
 
 async def add_item(user_id, collection_name, item):
-    user_data = load_user_data(user_id)
+    user_data = await load_user_data(user_id)
     user_data[collection_name].append(item)
     save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
 
 async def update_item(user_id, collection_name, item_index, item):
-    user_data = load_user_data(user_id)
+    user_data = await load_user_data(user_id)
     user_data[collection_name][item_index] = item
     save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
 
 async def delete_item(user_id, collection_name, item_index):
-    user_data = load_user_data(user_id)
+    user_data = await load_user_data(user_id)
     del user_data[collection_name][item_index]
     save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
 
 async def manage_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Показывает список расписания с кнопками, сгруппированный по дням."""
     user_id = str(update.effective_user.id)
-    items = get_schedule(user_id)
+    items = await get_schedule(user_id)
     if not items:
         await update.message.reply_text("Ваше расписание пусто.", reply_markup=get_main_keyboard())
         return ConversationHandler.END
@@ -267,7 +267,7 @@ async def manage_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def manage_deadlines(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Показывает список дедлайнов с кнопками."""
     user_id = str(update.effective_user.id)
-    items = get_deadlines(user_id)
+    items = await get_deadlines(user_id)
     if not items:
         await update.message.reply_text("У вас нет дедлайнов.", reply_markup=get_main_keyboard())
         return ConversationHandler.END
@@ -305,7 +305,7 @@ async def edit_schedule_day_callback(update: Update, context: ContextTypes.DEFAU
     context.user_data['selected_day'] = selected_day
     
     user_id = str(query.from_user.id)
-    items = get_schedule(user_id)
+    items = await get_schedule(user_id)
     
     day_items = sorted([item for item in items if item['day'].lower() == selected_day.lower()], key=lambda x: x['time'])
     
@@ -371,7 +371,7 @@ async def update_schedule_value_from_text(update: Update, context: ContextTypes.
             await update.message.reply_text("Пожалуйста, введите числовое значение для напоминания.", reply_markup=get_main_keyboard())
             return EDIT_SCHEDULE_VALUE
         
-    user_data = load_user_data(user_id)
+    user_data = await load_user_data(user_id)
     if item_index >= len(user_data['schedule']):
         await update.message.reply_text("Произошла ошибка. Пожалуйста, начните редактирование заново.", reply_markup=get_main_keyboard())
         return ConversationHandler.END
@@ -432,7 +432,7 @@ async def update_deadline_value_from_text(update: Update, context: ContextTypes.
             await update.message.reply_text("Пожалуйста, введите числовое значение для напоминания.", reply_markup=get_main_keyboard())
             return EDIT_DEADLINE_VALUE
 
-    user_data = load_user_data(user_id)
+    user_data = await load_user_data(user_id)
     if item_index >= len(user_data['deadlines']):
         await update.message.reply_text("Произошла ошибка. Пожалуйста, начните редактирование заново.", reply_markup=get_main_keyboard())
         return ConversationHandler.END
@@ -577,85 +577,66 @@ def webhook():
     except Exception as e:
         logger.error(f"Error in webhook: {str(e)}")
         return 'error', 500
-    
 def setup_webhook():
-    """Устанавливает webhook для Railway"""
+    """Устанавливает webhook"""
     try:
-        # Railway предоставляет RAILWAY_PUBLIC_DOMAIN
-        domain = os.environ.get('RAILWAY_PUBLIC_DOMAIN')
-        if not domain:
-            logger.info("Running without webhook (no domain)")
+        railway_url = os.environ.get('RAILWAY_STATIC_URL')
+        if not railway_url:
+            logger.error("RAILWAY_STATIC_URL not found!")
             return False
             
-        webhook_url = f"https://{domain}/webhook/{TOKEN}"
+        # 🔥 ДОБАВЛЯЕМ https:// к URL
+        if not railway_url.startswith('https://'):
+            railway_url = f"https://{railway_url}"
+            
+        webhook_url = f"{railway_url}/webhook/{TOKEN}"
         logger.info(f"Setting webhook to: {webhook_url}")
         
-        # Синхронная установка вебхука
-        application.bot.set_webhook(webhook_url)
+        # Устанавливаем webhook синхронно
+        async def set_wh():
+            # Сначала удаляем старый webhook
+            await application.bot.delete_webhook()
+            # Затем устанавливаем новый
+            result = await application.bot.set_webhook(webhook_url)
+            logger.info(f"Webhook set result: {result}")
+            
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(set_wh())
+        loop.close()
         
-        # Проверяем что вебхук установлен
-        webhook_info = application.bot.get_webhook_info()
-        logger.info(f"Webhook info: {webhook_info.url}")
-        
-        logger.info("✅ Webhook set successfully!")
+        logger.info("Webhook set successfully!")
         return True
         
     except Exception as e:
-        logger.error(f"❌ Failed to set webhook: {e}")
+        logger.error(f"Failed to set webhook: {e}")
         return False
-
-@app.route('/test')
-def test():
-    """Проверка что все работает"""
-    try:
-        # Проверяем базу данных
-        db_conn = get_db_connection()
-        db_ok = db_conn is not None
-        
-        # Проверяем бота
-        bot_ok = hasattr(application, 'bot')
-        
-        # Проверяем вебхук
-        if bot_ok:
-            webhook_info = application.bot.get_webhook_info()
-            webhook_ok = webhook_info.url is not None
-        else:
-            webhook_ok = False
-
-        return {
-            "status": "ok" if db_ok and bot_ok else "problems",
-            "database": "working" if db_ok else "not working",
-            "bot": "ready" if bot_ok else "not ready", 
-            "webhook": "set" if webhook_ok else "not set"
-        }
-    except Exception as e:
-        return {"status": "error", "error": str(e)}
-
-@app.route('/health')
-def health():
-    """Простая проверка"""
-    return {"status": "ok", "message": "Bot is running"}
 
 
 if __name__ == '__main__':
     # Инициализируем базу данных
-    logger.info("🔄 Initializing database...")
     init_database()
     
     # Регистрируем обработчики
-    logger.info("🔄 Registering handlers...")
     register_handlers()
     
-    # Настройка вебхука для Railway
-    logger.info("🔄 Setting up webhook...")
-    webhook_set = setup_webhook()
+    # 🔥 ИНИЦИАЛИЗИРУЕМ APPLICATION (ДОБАВЬ ЭТОТ БЛОК)
+    async def init_app():
+        await application.initialize()
+        logger.info("✅ Application initialized successfully")
     
-    if webhook_set:
-        logger.info("✅ Bot running in WEBHOOK mode")
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(init_app())
+    loop.close()
+    
+    # Устанавливаем webhook
+    if setup_webhook():
+        logger.info("✅ Bot started with webhooks")
     else:
-        logger.info("ℹ️ Bot running without webhook")
+        logger.error("❌ Failed to setup webhook")
     
     # Запускаем Flask
     port = int(os.environ.get('PORT', 8080))
-    logger.info(f"🚀 Starting Flask on port {port}")
+    logger.info(f"Starting Flask on port {port}")
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)

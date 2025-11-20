@@ -83,8 +83,7 @@ def save_user_data(user_id, schedule, deadlines):
     finally:
         conn.close()
 
-# database.py - ЗАМЕНИТЕ асинхронную функцию на синхронную
-def load_user_data(user_id):
+async def load_user_data(user_id):
     """Загружает данные пользователя из базы данных"""
     conn = get_db_connection()
     if not conn:
