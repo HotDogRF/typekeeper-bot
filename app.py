@@ -488,6 +488,7 @@ def register_handlers():
             ADD_SCHEDULE_REMINDER: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_schedule_reminder)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        per_message=True
     )
 
     # ConversationHandler для добавления дедлайна
@@ -500,6 +501,7 @@ def register_handlers():
             ADD_DEADLINE_REMINDER: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_deadline_reminder)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        per_message=True
     )
 
     # ConversationHandler для редактирования расписания
@@ -514,6 +516,7 @@ def register_handlers():
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        per_message=True
     )
 
     # ConversationHandler для редактирования дедлайна
@@ -527,6 +530,7 @@ def register_handlers():
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        per_message=True
     )
 
     application.add_handler(conv_handler_add_schedule)
@@ -585,58 +589,59 @@ def setup_webhook():
             logger.error("RAILWAY_STATIC_URL not found!")
             return False
             
-        # 🔥 ДОБАВЛЯЕМ https:// к URL
         if not railway_url.startswith('https://'):
             railway_url = f"https://{railway_url}"
             
         webhook_url = f"{railway_url}/webhook/{TOKEN}"
         logger.info(f"Setting webhook to: {webhook_url}")
         
-        # Устанавливаем webhook синхронно
         async def set_wh():
-            # Сначала удаляем старый webhook
-            await application.bot.delete_webhook()
-            # Затем устанавливаем новый
-            result = await application.bot.set_webhook(webhook_url)
-            logger.info(f"Webhook set result: {result}")
-            
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(set_wh())
-        loop.close()
+            try:
+                await application.bot.delete_webhook()
+                result = await application.bot.set_webhook(webhook_url)
+                logger.info(f"Webhook set result: {result}")
+                return True
+            except Exception as e:
+                logger.error(f"Error setting webhook: {e}")
+                return False
         
-        logger.info("Webhook set successfully!")
-        return True
+        return asyncio.get_event_loop().run_until_complete(set_wh())
         
     except Exception as e:
         logger.error(f"Failed to set webhook: {e}")
         return False
 
-
 if __name__ == '__main__':
-    # Инициализируем базу данных
-    init_database()
-    
-    # Регистрируем обработчики
-    register_handlers()
-    
-    # 🔥 ИНИЦИАЛИЗИРУЕМ APPLICATION (ДОБАВЬ ЭТОТ БЛОК)
-    async def init_app():
-        await application.initialize()
-        logger.info("✅ Application initialized successfully")
-    
+    # Создаем общий event loop для всего приложения
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    loop.run_until_complete(init_app())
-    loop.close()
     
-    # Устанавливаем webhook
-    if setup_webhook():
-        logger.info("✅ Bot started with webhooks")
-    else:
-        logger.error("❌ Failed to setup webhook")
-    
-    # Запускаем Flask
-    port = int(os.environ.get('PORT', 8080))
-    logger.info(f"Starting Flask on port {port}")
-    app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
+    try:
+        # 1. Инициализируем базу данных
+        logger.info("🔄 Initializing database...")
+        loop.run_until_complete(init_database())
+        
+        # 2. Регистрируем обработчики
+        register_handlers()
+        
+        # 3. Инициализируем application
+        logger.info("🔄 Initializing application...")
+        loop.run_until_complete(application.initialize())
+        logger.info("✅ Application initialized successfully")
+        
+        # 4. Устанавливаем webhook
+        logger.info("🔄 Setting up webhook...")
+        if setup_webhook():
+            logger.info("✅ Bot started with webhooks")
+        else:
+            logger.error("❌ Failed to setup webhook")
+        
+        # 5. Запускаем Flask
+        port = int(os.environ.get('PORT', 8080))
+        logger.info(f"🚀 Starting Flask on port {port}")
+        app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to start bot: {e}")
+    finally:
+        loop.close()
