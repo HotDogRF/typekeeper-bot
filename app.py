@@ -3,6 +3,7 @@ import os
 import asyncio
 import logging
 import json
+import time
 import threading
 from datetime import datetime, timedelta
 from collections import defaultdict
@@ -627,14 +628,20 @@ if __name__ == '__main__':
     else:
         logger.error("❌ Failed to setup webhook")
     
-    # Запускаем Flask с блокирующим вызовом
+    # Запускаем Flask в отдельном потоке
     port = int(os.environ.get('PORT', 8080))
-    logger.info(f"Starting Flask on port {port}")
     
-    # 🔥 ВАЖНО: Используем threaded=True чтобы обрабатывать multiple requests
-    app.run(
-        host='0.0.0.0', 
-        port=port, 
-        debug=False,
-        threaded=True  # ← ДОБАВЬТЕ ЭТО
-    )
+    def run_flask():
+        app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
+    
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+    logger.info(f"Flask started in background on port {port}")
+    
+    # 🔥 БЕСКОНЕЧНЫЙ ЦИКЛ - ГЛАВНОЕ ИСПРАВЛЕНИЕ
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
