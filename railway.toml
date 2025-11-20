@@ -2,7 +2,17 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "python TypeKeeper.py"
+startCommand = "python app.py"
+
+[http]
+port = 8080
+healthcheckPath = "/"
+
+[[services]]
+name = "bot"
+[services.ports]
+port = 8080
+protocol = "http"
 
 [environments.production.vars]
 BOT_TOKEN = "8240746309:AAEqhznhHLgSd2K0QMpmdBQHMHIyJNdrYG8"

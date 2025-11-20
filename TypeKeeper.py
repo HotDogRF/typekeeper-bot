@@ -244,8 +244,11 @@ async def add_deadline_reminder(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def manage_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Показывает список расписания с кнопками, сгруппированный по дням."""
+    print("🔍 DEBUG: manage_schedule вызвана")  # ← ДОБАВЬ ЭТУ СТРОКУ
     user_id = str(update.effective_user.id)
+    print(f"🔍 DEBUG: user_id = {user_id}")  # ← И ЭТУ
     items = await get_schedule(user_id)
+    print(f"🔍 DEBUG: items = {items}")  # ← И ЭТУ
     if not items:
         await update.message.reply_text("Ваше расписание пусто.", reply_markup=get_main_keyboard())
         return ConversationHandler.END
@@ -634,16 +637,34 @@ def main() -> None:
     else:
         print("⚠️ JobQueue недоступен. Напоминания не будут работать.")
         
-    # 🔧 ЗАПУСК НА RAILWAY - ПРОСТОЙ ВАРИАНТ
+    # 🔧 АДАПТИВНЫЙ ЗАПУСК: Webhooks на Railway, Polling локально
     port = int(os.environ.get('PORT', 8080))
-    webhook_url = os.environ.get('RAILWAY_STATIC_URL')
+    railway_url = os.environ.get('RAILWAY_STATIC_URL')
 
+    if railway_url:
+        # 🔄 РЕЖИМ WEBHOOKS ДЛЯ RAILWAY
+        webhook_url = f"{railway_url}/webhook"
+        
+        # Устанавливаем webhook
+        async def set_webhook():
+            await application.bot.set_webhook(f"{webhook_url}/{TOKEN}")
+        
+        application.run_webhook(
+            listen="0.0.0.0",
+            port=port,
+            url_path=TOKEN,
+            webhook_url=f"{webhook_url}/{TOKEN}",
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True
+        )
+        logging.info(f"🚀 Запущен через Webhooks: {webhook_url}")
+    else:
+        # 🔧 РЕЖИМ POLLING ДЛЯ ЛОКАЛЬНОЙ РАЗРАБОТКИ
+        logging.info("🔧 Локальный запуск через polling...")
+        application.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True
+        )
 
-    # Используем polling для локальной разработки
-    logging.info("🚀 Запуск через polling...")
-    application.run_polling(
-        allowed_updates=Update.ALL_TYPES,
-        drop_pending_updates=True
-    )
 if __name__ == "__main__":
     main()

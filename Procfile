@@ -1,1 +1,1 @@
-worker: python TypeKeeper.py
+web: python app.py
