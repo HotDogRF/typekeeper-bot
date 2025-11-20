@@ -559,7 +559,7 @@ def webhook():
         
         update = Update.de_json(json_data, application.bot)
         
-        # 🔥 ПРОСТОЕ РЕШЕНИЕ: Синхронная обработка
+        # 🔥 СИНХРОННАЯ ОБРАБОТКА - сразу обрабатываем
         async def process():
             try:
                 await application.process_update(update)
@@ -567,7 +567,7 @@ def webhook():
             except Exception as e:
                 logger.error(f"Error processing update: {e}")
         
-        # Запускаем в отдельном event loop
+        # Создаем и запускаем event loop
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         loop.run_until_complete(process())
