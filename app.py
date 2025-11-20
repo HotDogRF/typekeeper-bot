@@ -3,8 +3,6 @@ import os
 import asyncio
 import logging
 import json
-import time
-import threading
 from datetime import datetime, timedelta
 from collections import defaultdict
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
@@ -18,6 +16,7 @@ from telegram.ext import (
     CallbackQueryHandler,
 )
 from database import init_database, save_user_data, load_user_data
+from waitress import serve
 
 app = Flask(__name__)
 
@@ -628,20 +627,7 @@ if __name__ == '__main__':
     else:
         logger.error("❌ Failed to setup webhook")
     
-    # Запускаем Flask в отдельном потоке
+    # Запускаем через Waitress (продакшен сервер)
     port = int(os.environ.get('PORT', 8080))
-    
-    def run_flask():
-        app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
-    
-    flask_thread = threading.Thread(target=run_flask)
-    flask_thread.daemon = True
-    flask_thread.start()
-    logger.info(f"Flask started in background on port {port}")
-    
-    # 🔥 БЕСКОНЕЧНЫЙ ЦИКЛ - ГЛАВНОЕ ИСПРАВЛЕНИЕ
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
+    logger.info(f"Starting Waitress server on port {port}")
+    serve(app, host='0.0.0.0', port=port)
