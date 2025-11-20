@@ -637,34 +637,16 @@ def main() -> None:
     else:
         print("⚠️ JobQueue недоступен. Напоминания не будут работать.")
         
-    # 🔧 АДАПТИВНЫЙ ЗАПУСК: Webhooks на Railway, Polling локально
+    # 🔧 ЗАПУСК НА RAILWAY - ПРОСТОЙ ВАРИАНТ
     port = int(os.environ.get('PORT', 8080))
-    railway_url = os.environ.get('RAILWAY_STATIC_URL')
+    webhook_url = os.environ.get('RAILWAY_STATIC_URL')
 
-    if railway_url:
-        # 🔄 РЕЖИМ WEBHOOKS ДЛЯ RAILWAY
-        webhook_url = f"{railway_url}/webhook"
-        
-        # Устанавливаем webhook
-        async def set_webhook():
-            await application.bot.set_webhook(f"{webhook_url}/{TOKEN}")
-        
-        application.run_webhook(
-            listen="0.0.0.0",
-            port=port,
-            url_path=TOKEN,
-            webhook_url=f"{webhook_url}/{TOKEN}",
-            allowed_updates=Update.ALL_TYPES,
-            drop_pending_updates=True
-        )
-        logging.info(f"🚀 Запущен через Webhooks: {webhook_url}")
-    else:
-        # 🔧 РЕЖИМ POLLING ДЛЯ ЛОКАЛЬНОЙ РАЗРАБОТКИ
-        logging.info("🔧 Локальный запуск через polling...")
-        application.run_polling(
-            allowed_updates=Update.ALL_TYPES,
-            drop_pending_updates=True
-        )
 
+    # Используем polling для локальной разработки
+    logging.info("🚀 Запуск через polling...")
+    application.run_polling(
+        allowed_updates=Update.ALL_TYPES,
+        drop_pending_updates=True
+    )
 if __name__ == "__main__":
     main()
