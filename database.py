@@ -1,45 +1,30 @@
 import os
-import psycopg2
+import asyncpg
 import json
-from urllib.parse import urlparse
 
-def get_db_connection():
-    """Подключается к PostgreSQL через DATABASE_URL"""
+async def get_db_connection():
+    """Асинхронное подключение к PostgreSQL"""
     try:
-        # Для Railway
         database_url = os.environ.get('DATABASE_URL')
-        
         if database_url:
-            # Парсим URL для Railway
-            result = urlparse(database_url)
-            conn = psycopg2.connect(
-                host=result.hostname,
-                database=result.path[1:],
-                user=result.username,
-                password=result.password,
-                port=result.port,
-                sslmode='require'
-            )
-            print("✅ Успешно подключились к PostgreSQL на Railway")
+            conn = await asyncpg.connect(database_url)
+            print("✅ Успешно подключились к PostgreSQL асинхронно")
             return conn
         else:
-            # Если нет DATABASE_URL, возвращаем None
             print("❌ DATABASE_URL не установлена")
             return None
     except Exception as e:
         print(f"❌ Ошибка подключения к БД: {e}")
         return None
 
-# ... остальные функции (init_database, save_user_data, load_user_data) остаются как были ...
-def init_database():
+async def init_database():
     """Создает таблицу если её нет"""
-    conn = get_db_connection()
+    conn = await get_db_connection()
     if not conn:
         return False
         
     try:
-        cur = conn.cursor()
-        cur.execute('''
+        await conn.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 user_id BIGINT PRIMARY KEY,
                 schedule JSONB,
@@ -47,33 +32,30 @@ def init_database():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        conn.commit()
         print("✅ Таблица users создана или уже существует")
         return True
     except Exception as e:
         print(f"❌ Ошибка создания таблицы: {e}")
         return False
     finally:
-        conn.close()
+        await conn.close()
 
-def save_user_data(user_id, schedule, deadlines):
+async def save_user_data(user_id, schedule, deadlines):
     """Сохраняет данные пользователя в базу данных"""
-    conn = get_db_connection()
+    conn = await get_db_connection()
     if not conn:
         return False
         
     try:
-        cur = conn.cursor()
-        cur.execute('''
+        await conn.execute('''
             INSERT INTO users (user_id, schedule, deadlines)
-            VALUES (%s, %s, %s)
+            VALUES ($1, $2, $3)
             ON CONFLICT (user_id) 
             DO UPDATE SET 
                 schedule = EXCLUDED.schedule,
                 deadlines = EXCLUDED.deadlines
-        ''', (user_id, json.dumps(schedule), json.dumps(deadlines)))
+        ''', user_id, json.dumps(schedule), json.dumps(deadlines))
         
-        conn.commit()
         print(f"✅ Данные пользователя {user_id} сохранены в БД")
         return True
         
@@ -81,22 +63,23 @@ def save_user_data(user_id, schedule, deadlines):
         print(f"❌ Ошибка сохранения: {e}")
         return False
     finally:
-        conn.close()
+        await conn.close()
 
 async def load_user_data(user_id):
     """Загружает данные пользователя из базы данных"""
-    conn = get_db_connection()
+    conn = await get_db_connection()
     if not conn:
         return {'schedule': [], 'deadlines': []}
         
     try:
-        cur = conn.cursor()
-        cur.execute('SELECT schedule, deadlines FROM users WHERE user_id = %s', (user_id,))
-        result = cur.fetchone()
+        result = await conn.fetchrow(
+            'SELECT schedule, deadlines FROM users WHERE user_id = $1', 
+            user_id
+        )
         
         if result:
-            schedule = result[0] if result[0] else []
-            deadlines = result[1] if result[1] else []
+            schedule = result['schedule'] if result['schedule'] else []
+            deadlines = result['deadlines'] if result['deadlines'] else []
             print(f"✅ Данные пользователя {user_id} загружены из БД")
             return {'schedule': schedule, 'deadlines': deadlines}
         else:
@@ -107,4 +90,4 @@ async def load_user_data(user_id):
         print(f"❌ Ошибка загрузки: {e}")
         return {'schedule': [], 'deadlines': []}
     finally:
-        conn.close()
+        await conn.close()
