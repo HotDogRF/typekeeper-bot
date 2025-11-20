@@ -468,6 +468,10 @@ async def deadline_reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     # Для упрощения временно отключим напоминания в этой версии
     pass
 
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик ошибок"""
+    logger.error(f"Ошибка: {context.error}")
+
 # === FLASK WEBHOOK HANDLING ===
 
 def register_handlers():
@@ -488,7 +492,6 @@ def register_handlers():
             ADD_SCHEDULE_REMINDER: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_schedule_reminder)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
-        per_message=True
     )
 
     # ConversationHandler для добавления дедлайна
@@ -501,7 +504,6 @@ def register_handlers():
             ADD_DEADLINE_REMINDER: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_deadline_reminder)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
-        per_message=True
     )
 
     # ConversationHandler для редактирования расписания
@@ -516,7 +518,6 @@ def register_handlers():
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
-        per_message=True
     )
 
     # ConversationHandler для редактирования дедлайна
@@ -530,7 +531,6 @@ def register_handlers():
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
-        per_message=True
     )
 
     application.add_handler(conv_handler_add_schedule)
@@ -540,6 +540,7 @@ def register_handlers():
     
     # Отдельные обработчики для удаления
     application.add_handler(CallbackQueryHandler(delete_item_callback, pattern="^delete_"))
+    application.add_error_handler(error_handler)
 
 @app.route('/')
 def index():
@@ -562,86 +563,91 @@ def webhook():
         
         update = Update.de_json(json_data, application.bot)
         
-        # 🔥 СИНХРОННАЯ ОБРАБОТКА - сразу обрабатываем
-        async def process():
+        # 🔥 ВАЖНО: Используем существующий event loop из application
+        def sync_processing():
             try:
-                await application.process_update(update)
+                # Создаем новый event loop для этого потока
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(application.process_update(update))
+                loop.close()
                 logger.info("Update processed successfully")
             except Exception as e:
                 logger.error(f"Error processing update: {e}")
         
-        # Создаем и запускаем event loop
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(process())
-        loop.close()
+        # Запускаем в отдельном потоке чтобы не блокировать Flask
+        import threading
+        thread = threading.Thread(target=sync_processing, daemon=True)
+        thread.start()
         
         return 'ok'
         
     except Exception as e:
         logger.error(f"Error in webhook: {str(e)}")
         return 'error', 500
-def setup_webhook():
-    """Устанавливает webhook"""
-    try:
-        railway_url = os.environ.get('RAILWAY_STATIC_URL')
-        if not railway_url:
-            logger.error("RAILWAY_STATIC_URL not found!")
-            return False
-            
-        if not railway_url.startswith('https://'):
-            railway_url = f"https://{railway_url}"
-            
-        webhook_url = f"{railway_url}/webhook/{TOKEN}"
-        logger.info(f"Setting webhook to: {webhook_url}")
-        
-        async def set_wh():
-            try:
-                await application.bot.delete_webhook()
-                result = await application.bot.set_webhook(webhook_url)
-                logger.info(f"Webhook set result: {result}")
-                return True
-            except Exception as e:
-                logger.error(f"Error setting webhook: {e}")
-                return False
-        
-        return asyncio.get_event_loop().run_until_complete(set_wh())
-        
-    except Exception as e:
-        logger.error(f"Failed to set webhook: {e}")
-        return False
-
-if __name__ == '__main__':
-    # Создаем общий event loop для всего приложения
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
     
-    try:
-        # 1. Инициализируем базу данных
-        logger.info("🔄 Initializing database...")
-        loop.run_until_complete(init_database())
+if __name__ == '__main__':
+    import threading
+    
+    # Функция для запуска asyncio в отдельном потоке
+    def run_async_tasks():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         
-        # 2. Регистрируем обработчики
-        register_handlers()
-        
-        # 3. Инициализируем application
-        logger.info("🔄 Initializing application...")
-        loop.run_until_complete(application.initialize())
-        logger.info("✅ Application initialized successfully")
-        
-        # 4. Устанавливаем webhook
-        logger.info("🔄 Setting up webhook...")
-        if setup_webhook():
-            logger.info("✅ Bot started with webhooks")
-        else:
-            logger.error("❌ Failed to setup webhook")
-        
-        # 5. Запускаем Flask
-        port = int(os.environ.get('PORT', 8080))
-        logger.info(f"🚀 Starting Flask on port {port}")
-        app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
-        
-    except Exception as e:
-        logger.error(f"❌ Failed to start bot: {e}")
-    finally:
-        loop.close()
+        try:
+            # 1. Инициализируем базу данных
+            logger.info("🔄 Initializing database...")
+            loop.run_until_complete(init_database())
+            
+            # 2. Инициализируем application
+            logger.info("🔄 Initializing application...")
+            loop.run_until_complete(application.initialize())
+            logger.info("✅ Application initialized successfully")
+            
+            # 3. Устанавливаем webhook
+            logger.info("🔄 Setting up webhook...")
+            
+            async def set_webhook_async():
+                try:
+                    railway_url = os.environ.get('RAILWAY_STATIC_URL')
+                    if not railway_url:
+                        logger.error("RAILWAY_STATIC_URL not found!")
+                        return False
+                        
+                    if not railway_url.startswith('https://'):
+                        railway_url = f"https://{railway_url}"
+                        
+                    webhook_url = f"{railway_url}/webhook/{TOKEN}"
+                    logger.info(f"Setting webhook to: {webhook_url}")
+                    
+                    await application.bot.delete_webhook()
+                    result = await application.bot.set_webhook(webhook_url)
+                    logger.info(f"Webhook set result: {result}")
+                    return True
+                except Exception as e:
+                    logger.error(f"Error setting webhook: {e}")
+                    return False
+            
+            success = loop.run_until_complete(set_webhook_async())
+            if success:
+                logger.info("✅ Bot started with webhooks")
+            else:
+                logger.error("❌ Failed to setup webhook")
+                
+        except Exception as e:
+            logger.error(f"❌ Failed to start bot: {e}")
+        finally:
+            # НЕ закрываем loop, чтобы он работал для webhook запросов
+            pass
+    
+    # Запускаем асинхронные задачи в отдельном потоке
+    async_thread = threading.Thread(target=run_async_tasks, daemon=True)
+    async_thread.start()
+    
+    # Регистрируем обработчики в основном потоке
+    register_handlers()
+    
+    # Запускаем Flask в основном потоке
+    port = int(os.environ.get('PORT', 8080))
+    logger.info(f"🚀 Starting Flask on port {port}")
+    app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
