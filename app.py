@@ -16,7 +16,6 @@ from telegram.ext import (
     CallbackQueryHandler,
 )
 from database import init_database, save_user_data, load_user_data
-from waitress import serve
 
 app = Flask(__name__)
 
@@ -627,7 +626,7 @@ if __name__ == '__main__':
     else:
         logger.error("❌ Failed to setup webhook")
     
-    # Запускаем через Waitress (продакшен сервер)
+    # Запускаем Flask
     port = int(os.environ.get('PORT', 8080))
-    logger.info(f"Starting Waitress server on port {port}")
-    serve(app, host='0.0.0.0', port=port)
+    logger.info(f"Starting Flask on port {port}")
+    app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
