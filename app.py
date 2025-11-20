@@ -627,7 +627,14 @@ if __name__ == '__main__':
     else:
         logger.error("❌ Failed to setup webhook")
     
-    # Запускаем Flask
+    # Запускаем Flask с блокирующим вызовом
     port = int(os.environ.get('PORT', 8080))
     logger.info(f"Starting Flask on port {port}")
-    app.run(host='0.0.0.0', port=port, debug=False)
+    
+    # 🔥 ВАЖНО: Используем threaded=True чтобы обрабатывать multiple requests
+    app.run(
+        host='0.0.0.0', 
+        port=port, 
+        debug=False,
+        threaded=True  # ← ДОБАВЬТЕ ЭТО
+    )
