@@ -563,23 +563,17 @@ def webhook():
         
         update = Update.de_json(json_data, application.bot)
         
-        # 🔥 ВАЖНО: Используем существующий event loop из application
-        def sync_processing():
-            try:
-                # Создаем новый event loop для этого потока
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                loop.run_until_complete(application.process_update(update))
-                loop.close()
-                logger.info("Update processed successfully")
-            except Exception as e:
-                logger.error(f"Error processing update: {e}")
+        # 🔥 ПРОСТОЙ ФИКС - обрабатываем сразу в этом потоке
+        async def process_update():
+            await application.process_update(update)
         
-        # Запускаем в отдельном потоке чтобы не блокировать Flask
-        import threading
-        thread = threading.Thread(target=sync_processing, daemon=True)
-        thread.start()
+        # Создаем новый event loop для этого запроса
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(process_update())
+        loop.close()
         
+        logger.info("Update processed successfully")
         return 'ok'
         
     except Exception as e:
