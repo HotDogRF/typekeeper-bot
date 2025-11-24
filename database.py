@@ -19,28 +19,54 @@ async def get_db_connection():
 
 async def init_database():
     """Создает таблицу если её нет"""
-    conn = await get_db_connection()
-    if not conn:
-        return False
-        
     try:
-        await conn.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                user_id BIGINT PRIMARY KEY,
-                schedule JSONB DEFAULT '[]',
-                deadlines JSONB DEFAULT '[]',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
+        conn = await get_db_connection()
+        if not conn:
+            print("❌ Не удалось подключиться к БД для инициализации")
+            return False
+            
+        # Проверяем существование таблицы
+        table_exists = await conn.fetchval('''
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'users'
+            );
         ''')
-        print("✅ Таблица users создана или уже существует")
+        
+        if table_exists:
+            print("✅ Таблица users уже существует")
+        else:
+            # Создаем таблицу
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id BIGINT PRIMARY KEY,
+                    schedule JSONB DEFAULT '[]',
+                    deadlines JSONB DEFAULT '[]',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            print("✅ Таблица users создана")
+            
+        # Проверяем структуру таблицы
+        columns = await conn.fetch('''
+            SELECT column_name, data_type 
+            FROM information_schema.columns 
+            WHERE table_name = 'users'
+        ''')
+        
+        print("📋 Структура таблицы users:")
+        for col in columns:
+            print(f"   - {col['column_name']}: {col['data_type']}")
+            
         return True
         
     except Exception as e:
-        print(f"❌ Ошибка создания таблицы: {e}")
+        print(f"❌ Ошибка инициализации БД: {e}")
         return False
         
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
 
 async def save_user_data(user_id, schedule, deadlines):
     """Сохраняет данные пользователя в базу данных"""
