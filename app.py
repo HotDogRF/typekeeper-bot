@@ -15,7 +15,7 @@ from telegram.ext import (
     filters,
     CallbackQueryHandler,
 )
-from database import init_database, save_user_data, load_user_data
+from database import init_database, save_user_data, load_user_data, get_db_connection
 
 app = Flask(__name__)
 
