@@ -723,32 +723,36 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def register_handlers():
     """
-    🔥 ВАЖНО: Правильный порядок регистрации обработчиков
-    1. Сначала обработчики callback'ов
-    2. Потом команды
-    3. В конце ConversationHandler
+    🔥 ИСПРАВЛЕННЫЙ ПОРЯДОК РЕГИСТРАЦИИ:
+    1. Сначала КОНКРЕТНЫЕ обработчики callback'ов
+    2. Потом ГЛОБАЛЬНЫЙ обработчик callback'ов
+    3. Потом команды
+    4. В конце ConversationHandler
     """
     
-    # 🔥 ШАГ 1: Регистрируем обработчики CALLBACK'ОВ ПЕРВЫМИ
-    # Глобальный обработчик для всех callback'ов (должен быть первым)
-    application.add_handler(CallbackQueryHandler(global_callback_handler, pattern=".*"))
-    
-    # Конкретные обработчики callback'ов
+    # 🔥 ШАГ 1: Регистрируем КОНКРЕТНЫЕ обработчики callback'ов ПЕРВЫМИ
     application.add_handler(CallbackQueryHandler(add_schedule_day_callback, pattern="^day_"))
     application.add_handler(CallbackQueryHandler(delete_item_callback, pattern="^delete_schedule_"))
     application.add_handler(CallbackQueryHandler(delete_item_callback, pattern="^delete_deadline_"))
+    application.add_handler(CallbackQueryHandler(edit_schedule_day_callback, pattern="^edit_day_"))
+    application.add_handler(CallbackQueryHandler(edit_schedule_item_callback, pattern="^edit_schedule_"))
+    application.add_handler(CallbackQueryHandler(edit_schedule_field, pattern="^field_"))
+    application.add_handler(CallbackQueryHandler(edit_deadline_callback, pattern="^edit_deadline_"))
+    application.add_handler(CallbackQueryHandler(edit_deadline_field, pattern="^field_"))
     
-    # 🔥 ШАГ 2: Регистрируем команды
+    # 🔥 ШАГ 2: Глобальный обработчик callback'ов ДОЛЖЕН БЫТЬ ПОСЛЕ конкретных
+    application.add_handler(CallbackQueryHandler(global_callback_handler, pattern=".*"))
+    
+    # 🔥 ШАГ 3: Регистрируем команды
     application.add_handler(CommandHandler("start", start))
     
-    # 🔥 ШАГ 3: Регистрируем ConversationHandler ПОСЛЕДНИМИ
+    # 🔥 ШАГ 4: Регистрируем ConversationHandler ПОСЛЕДНИМИ
     
     # Добавление расписания
     conv_handler_add_schedule = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Добавить расписание$"), start_add_schedule)],
         states={
             ADD_SCHEDULE_DAY: [
-                # 🔥 УБИРАЕМ CallbackQueryHandler отсюда - он уже зарегистрирован выше
                 MessageHandler(filters.TEXT & ~filters.COMMAND, add_schedule_day)
             ],
             ADD_SCHEDULE_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_schedule_time)],
@@ -819,7 +823,7 @@ def webhook():
     try:
         json_data = request.get_json()
         
-        # 🔥 ЛОГИРУЕМ ВХОДЯЩИЕ ДАННЫЕ
+        # Логируем входящие данные
         if json_data and 'callback_query' in json_data:
             logger.info(f"📨 CALLBACK WEBHOOK: {json_data['callback_query']['data']}")
         elif json_data and 'message' in json_data:
@@ -831,14 +835,20 @@ def webhook():
             
         update = Update.de_json(json_data, application.bot)
         
-        # Обрабатываем update асинхронно
-        async def process_update():
-            await application.process_update(update)
+        # 🔥 ИСПРАВЛЕНИЕ: Используем существующий event loop или создаем новый
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
         
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(process_update())
-        loop.close()
+        # 🔥 Обрабатываем update в существующем loop'е
+        if loop.is_running():
+            # Если loop уже запущен, используем create_task
+            asyncio.create_task(application.process_update(update))
+        else:
+            # Если loop не запущен, запускаем его
+            loop.run_until_complete(application.process_update(update))
         
         return 'ok'
         
