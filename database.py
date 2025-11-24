@@ -75,17 +75,18 @@ async def load_user_data(user_id):
         return {'schedule': [], 'deadlines': []}
         
     try:
-        # 🔥 ПРЕОБРАЗУЕМ user_id В INT
         user_id_int = int(user_id)
         
         result = await conn.fetchrow(
             'SELECT schedule, deadlines FROM users WHERE user_id = $1', 
-            user_id_int  # 🔥 передаем число вместо строки
+            user_id_int
         )
         
         if result:
-            schedule = result['schedule'] if result['schedule'] else []
-            deadlines = result['deadlines'] if result['deadlines'] else []
+            # 🔥 ПРЕОБРАЗУЕМ JSON СТРОКИ В ПИТОНОВСКИЕ ОБЪЕКТЫ
+            schedule = json.loads(result['schedule']) if result['schedule'] else []
+            deadlines = json.loads(result['deadlines']) if result['deadlines'] else []
+            
             print(f"✅ Данные пользователя {user_id} загружены из БД")
             return {'schedule': schedule, 'deadlines': deadlines}
         else:
