@@ -724,36 +724,21 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def register_handlers():
     """
     🔥 ИСПРАВЛЕННЫЙ ПОРЯДОК РЕГИСТРАЦИИ:
-    1. Сначала КОНКРЕТНЫЕ обработчики callback'ов
-    2. Потом ГЛОБАЛЬНЫЙ обработчик callback'ов
-    3. Потом команды
-    4. В конце ConversationHandler
+    Теперь все callback-обработчики регистрируются внутри соответствующих ConversationHandler
     """
     
-    # 🔥 ШАГ 1: Регистрируем КОНКРЕТНЫЕ обработчики callback'ов ПЕРВЫМИ
-    application.add_handler(CallbackQueryHandler(add_schedule_day_callback, pattern="^day_"))
-    application.add_handler(CallbackQueryHandler(delete_item_callback, pattern="^delete_schedule_"))
-    application.add_handler(CallbackQueryHandler(delete_item_callback, pattern="^delete_deadline_"))
-    application.add_handler(CallbackQueryHandler(edit_schedule_day_callback, pattern="^edit_day_"))
-    application.add_handler(CallbackQueryHandler(edit_schedule_item_callback, pattern="^edit_schedule_"))
-    application.add_handler(CallbackQueryHandler(edit_schedule_field, pattern="^field_"))
-    application.add_handler(CallbackQueryHandler(edit_deadline_callback, pattern="^edit_deadline_"))
-    application.add_handler(CallbackQueryHandler(edit_deadline_field, pattern="^field_"))
-    
-    # 🔥 ШАГ 2: Глобальный обработчик callback'ов ДОЛЖЕН БЫТЬ ПОСЛЕ конкретных
-    application.add_handler(CallbackQueryHandler(global_callback_handler, pattern=".*"))
-    
-    # 🔥 ШАГ 3: Регистрируем команды
+    # 🔥 ШАГ 1: Регистрируем команды
     application.add_handler(CommandHandler("start", start))
     
-    # 🔥 ШАГ 4: Регистрируем ConversationHandler ПОСЛЕДНИМИ
+    # 🔥 ШАГ 2: Регистрируем ConversationHandler с ВКЛЮЧЕННЫМИ callback-обработчиками
     
-    # Добавление расписания
+    # Добавление расписания - ВАЖНО: добавляем callback для выбора дня
     conv_handler_add_schedule = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Добавить расписание$"), start_add_schedule)],
         states={
             ADD_SCHEDULE_DAY: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, add_schedule_day)
+                MessageHandler(filters.TEXT & ~filters.COMMAND, add_schedule_day),
+                CallbackQueryHandler(add_schedule_day_callback, pattern="^day_")  # 🔥 ДОБАВЛЕНО
             ],
             ADD_SCHEDULE_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_schedule_time)],
             ADD_SCHEDULE_CLASS: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_schedule_class)],
@@ -779,8 +764,13 @@ def register_handlers():
     conv_handler_edit_schedule = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Мое расписание$"), manage_schedule)],
         states={
-            EDIT_SCHEDULE_DAY: [CallbackQueryHandler(edit_schedule_day_callback, pattern="^edit_day_")],
-            EDIT_SCHEDULE_FIELD: [CallbackQueryHandler(edit_schedule_item_callback, pattern="^edit_schedule_")],
+            EDIT_SCHEDULE_DAY: [
+                CallbackQueryHandler(edit_schedule_day_callback, pattern="^edit_day_")
+            ],
+            EDIT_SCHEDULE_FIELD: [
+                CallbackQueryHandler(edit_schedule_item_callback, pattern="^edit_schedule_"),
+                CallbackQueryHandler(delete_item_callback, pattern="^delete_schedule_")
+            ],
             EDIT_SCHEDULE_VALUE: [
                 CallbackQueryHandler(edit_schedule_field, pattern="^field_"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, update_schedule_value)
@@ -793,7 +783,10 @@ def register_handlers():
     conv_handler_edit_deadline = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Мои дедлайны$"), manage_deadlines)],
         states={
-            EDIT_DEADLINE_FIELD: [CallbackQueryHandler(edit_deadline_callback, pattern="^edit_deadline_")],
+            EDIT_DEADLINE_FIELD: [
+                CallbackQueryHandler(edit_deadline_callback, pattern="^edit_deadline_"),
+                CallbackQueryHandler(delete_item_callback, pattern="^delete_deadline_")
+            ],
             EDIT_DEADLINE_VALUE: [
                 CallbackQueryHandler(edit_deadline_field, pattern="^field_"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, update_deadline_value)
@@ -807,6 +800,9 @@ def register_handlers():
     application.add_handler(conv_handler_add_deadline)
     application.add_handler(conv_handler_edit_schedule)
     application.add_handler(conv_handler_edit_deadline)
+    
+    # 🔥 ШАГ 3: Глобальный обработчик callback'ов для всех остальных случаев
+    application.add_handler(CallbackQueryHandler(global_callback_handler, pattern=".*"))
     
     # Обработчик ошибок
     application.add_error_handler(error_handler)
