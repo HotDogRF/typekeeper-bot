@@ -719,46 +719,68 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик ошибок"""
     logger.error(f"🚨 ОШИБКА: {context.error}")
 
-async def test_db_connection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Тестирование подключения к БД"""
-    user_id = str(update.effective_user.id)
-    
+async def test_db(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Детальная проверка подключения к БД"""
     try:
+        user_id = str(update.effective_user.id)
+        await update.message.reply_text("🔍 Детальная проверка БД...")
+        
         # Тест 1: Подключение к БД
+        await update.message.reply_text("1. Проверяю подключение к БД...")
         conn = await get_db_connection()
         if not conn:
             await update.message.reply_text("❌ Не удалось подключиться к БД")
             return
-        
         await update.message.reply_text("✅ Подключение к БД успешно")
-        await conn.close()
         
         # Тест 2: Инициализация таблиц
+        await update.message.reply_text("2. Проверяю таблицы БД...")
         success = await init_database()
-        if success:
-            await update.message.reply_text("✅ Таблицы БД инициализированы")
-        else:
+        if not success:
             await update.message.reply_text("❌ Ошибка инициализации таблиц")
-            
-        # Тест 3: Сохранение тестовых данных
-        test_schedule = [{"day": "понедельник", "time": "10:00-11:30", "className": "Тест", "professor": "Тест", "reminderBefore": 15}]
+            await conn.close()
+            return
+        await update.message.reply_text("✅ Таблицы БД готовы")
+        
+        # Тест 3: Пробуем сохранить тестовые данные
+        await update.message.reply_text("3. Тестирую сохранение данных...")
+        test_schedule = [{"day": "понедельник", "time": "10:00-11:30", "className": "Тестовый предмет", "professor": "Тест", "reminderBefore": 15}]
         test_deadlines = [{"name": "Тестовый дедлайн", "datetime": "2024-12-31 23:59", "description": "Тест", "reminderBefore": 60}]
         
         save_success = await save_user_data(user_id, test_schedule, test_deadlines)
-        if save_success:
-            await update.message.reply_text("✅ Тестовые данные сохранены")
-        else:
-            await update.message.reply_text("❌ Ошибка сохранения данных")
-            
-        # Тест 4: Загрузка данных
+        if not save_success:
+            await update.message.reply_text("❌ Ошибка сохранения тестовых данных")
+            await conn.close()
+            return
+        await update.message.reply_text("✅ Тестовые данные сохранены")
+        
+        # Тест 4: Пробуем загрузить данные
+        await update.message.reply_text("4. Тестирую загрузку данных...")
         user_data = await load_user_data(user_id)
-        if user_data and (user_data['schedule'] or user_data['deadlines']):
-            await update.message.reply_text(f"✅ Данные загружены: {len(user_data['schedule'])} расписаний, {len(user_data['deadlines'])} дедлайнов")
+        
+        if not user_data:
+            await update.message.reply_text("❌ Функция load_user_data вернула None")
+        elif not user_data.get('schedule') and not user_data.get('deadlines'):
+            await update.message.reply_text("❌ Данные пустые после загрузки")
         else:
-            await update.message.reply_text("❌ Данные не загружены или пустые")
+            schedule_count = len(user_data.get('schedule', []))
+            deadlines_count = len(user_data.get('deadlines', []))
+            await update.message.reply_text(f"✅ Данные загружены: {schedule_count} расписаний, {deadlines_count} дедлайнов")
+            
+            # Покажем что именно загрузилось
+            if schedule_count > 0:
+                await update.message.reply_text(f"📅 Расписание: {user_data['schedule']}")
+            if deadlines_count > 0:
+                await update.message.reply_text(f"📝 Дедлайны: {user_data['deadlines']}")
+        
+        await conn.close()
+        await update.message.reply_text("🔍 Проверка завершена")
             
     except Exception as e:
-        await update.message.reply_text(f"🚨 Ошибка тестирования БД: {str(e)}")
+        await update.message.reply_text(f"🚨 Критическая ошибка: {str(e)}")
+        import traceback
+        error_details = traceback.format_exc()
+        await update.message.reply_text(f"📋 Детали ошибки:\n{error_details[:1000]}...")  # Ограничиваем длину
 
 async def reset_database(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Принудительная переинициализация БД"""
@@ -780,7 +802,7 @@ def register_handlers():
     
     # 🔥 ШАГ 1: Регистрируем команды
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("test_db", test_db_connection))
+    application.add_handler(CommandHandler("test_db", test_db))
     application.add_handler(CommandHandler("reset_db", reset_database))
     # 🔥 ШАГ 2: Регистрируем ConversationHandler с ВКЛЮЧЕННЫМИ callback-обработчиками
     
