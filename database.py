@@ -83,9 +83,9 @@ async def load_user_data(user_id):
         )
         
         if result:
-            # 🔥 ПРЕОБРАЗУЕМ JSON СТРОКИ В ПИТОНОВСКИЕ ОБЪЕКТЫ
-            schedule = json.loads(result['schedule']) if result['schedule'] else []
-            deadlines = json.loads(result['deadlines']) if result['deadlines'] else []
+            # 🔥 ВОЗВРАЩАЕМ КАК ЕСТЬ - asyncpg УЖЕ ПРЕОБРАЗОВАЛ JSONB В PYTHON ОБЪЕКТЫ
+            schedule = result['schedule'] if result['schedule'] else []
+            deadlines = result['deadlines'] if result['deadlines'] else []
             
             print(f"✅ Данные пользователя {user_id} загружены из БД")
             return {'schedule': schedule, 'deadlines': deadlines}

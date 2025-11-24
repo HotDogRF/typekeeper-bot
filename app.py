@@ -228,41 +228,39 @@ async def delete_item(user_id, collection_name, item_index):
     save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
 
 async def manage_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Показывает список расписания с кнопками, сгруппированный по дням."""
+    """Упрощенная версия - показывает расписание без группировки"""
     user_id = str(update.effective_user.id)
     items = await get_schedule(user_id)
+    
     if not items:
         await update.message.reply_text("Ваше расписание пусто.", reply_markup=get_main_keyboard())
         return ConversationHandler.END
 
-    grouped_schedule = defaultdict(list)
-    for i, item in enumerate(items):
-        item['original_index'] = i
-        grouped_schedule[item['day'].capitalize()].append(item)
-
-    text = "Ваше расписание:\n\n"
+    text = "📅 Ваше расписание:\n\n"
     keyboard = []
     
-    sorted_days = sorted(grouped_schedule.keys(), key=lambda d: WEEKDAYS.index(d.lower()) if d.lower() in WEEKDAYS else len(WEEKDAYS))
-
-    for day in sorted_days:
-        text += f"**{day}**:\n"
-        day_items = grouped_schedule[day]
-        day_items.sort(key=lambda x: x['time'])
+    # Сортируем по дням недели и времени
+    items_sorted = sorted(items, key=lambda x: (
+        WEEKDAYS.index(x['day'].lower()) if x['day'].lower() in WEEKDAYS else len(WEEKDAYS),
+        x['time']
+    ))
+    
+    current_day = None
+    for i, item in enumerate(items_sorted):
+        if item['day'] != current_day:
+            current_day = item['day']
+            text += f"**{current_day.capitalize()}**:\n"
         
-        day_item_count = 0
-        for item in day_items:
-            day_item_count += 1
-            text += f"{day_item_count}. {item['className']}, {item['time']}, {item['professor']}\n"
+        text += f"• {item['className']} ({item['time']}) - {item['professor']}\n"
         
         keyboard.append([
-            InlineKeyboardButton(f"Редактировать {day}", callback_data=f"edit_day_{day}"),
+            InlineKeyboardButton(f"✏️ {item['className']}", callback_data=f"edit_item_{i}"),
+            InlineKeyboardButton(f"🗑️ {item['className']}", callback_data=f"delete_schedule_{i}"),
         ])
-        text += "\n"
-
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
-    return EDIT_SCHEDULE_DAY
+    return EDIT_SCHEDULE_FIELD
 
 async def manage_deadlines(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Показывает список дедлайнов с кнопками."""
