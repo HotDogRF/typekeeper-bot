@@ -25,7 +25,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-TOKEN = os.environ.get('BOT_TOKEN', '8240746309:AAEqhznhHLgSd2K0QMpmdBQHMHIyJNdrYG8')
+TOKEN = os.environ.get('BOT_TOKEN')
 
 # Состояния для ConversationHandler
 (
@@ -50,21 +50,10 @@ WEEKDAYS = [
     "понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"
 ]
 
-# Маппинг английских дней недели на русские
-RUSSIAN_WEEKDAYS = {
-    'monday': 'понедельник',
-    'tuesday': 'вторник', 
-    'wednesday': 'среда',
-    'thursday': 'четверг',
-    'friday': 'пятница',
-    'saturday': 'суббота',
-    'sunday': 'воскресеньe'
-}
-
 # Создаем application
 application = Application.builder().token(TOKEN).build()
 
-# === ФУНКЦИИ ИЗ TypeKeeper.py ===
+# === ОСНОВНЫЕ ФУНКЦИИ ===
 
 def get_main_keyboard():
     """Возвращает клавиатуру с основным меню."""
@@ -92,17 +81,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         reply_markup=get_main_keyboard()
     )
 
+# === РАСПИСАНИЕ ===
+
 async def start_add_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Запускает диалог добавления расписания."""
     context.user_data['schedule_data'] = {}
     await update.message.reply_text("Отлично! На какой день недели назначена пара? Выберите из списка или напишите вручную:", reply_markup=get_weekday_keyboard())
     return ADD_SCHEDULE_DAY
-
-async def start_add_deadline(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Запускает диалог добавления дедлайна."""
-    context.user_data['deadline_data'] = {}
-    await update.message.reply_text("Отлично! Как назовем дедлайн?", reply_markup=get_main_keyboard())
-    return ADD_DEADLINE_NAME
 
 async def add_schedule_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Сохраняет день и запрашивает время (для ручного ввода)."""
@@ -149,7 +134,9 @@ async def add_schedule_reminder(update: Update, context: ContextTypes.DEFAULT_TY
         
         user_data = await load_user_data(user_id)
         user_data['schedule'].append(context.user_data['schedule_data'])
-        save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
+        
+        # 🔥 ИСПРАВЛЕНО: добавили await
+        await save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
         
         await update.message.reply_text("Расписание успешно добавлено!", reply_markup=get_main_keyboard())
         return ConversationHandler.END
@@ -157,10 +144,13 @@ async def add_schedule_reminder(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("Пожалуйста, введите числовое значение.", reply_markup=get_main_keyboard())
         return ADD_SCHEDULE_REMINDER
 
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Отменяет текущий диалог."""
-    await update.message.reply_text("Действие отменено.", reply_markup=get_main_keyboard())
-    return ConversationHandler.END
+# === ДЕДЛАЙНЫ ===
+
+async def start_add_deadline(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Запускает диалог добавления дедлайна."""
+    context.user_data['deadline_data'] = {}
+    await update.message.reply_text("Отлично! Как назовем дедлайн?", reply_markup=get_main_keyboard())
+    return ADD_DEADLINE_NAME
 
 async def add_deadline_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Сохраняет название дедлайна и запрашивает дату и время."""
@@ -194,13 +184,17 @@ async def add_deadline_reminder(update: Update, context: ContextTypes.DEFAULT_TY
         
         user_data = await load_user_data(user_id)
         user_data['deadlines'].append(context.user_data['deadline_data'])
-        save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
+        
+        # 🔥 ИСПРАВЛЕНО: добавили await
+        await save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
         
         await update.message.reply_text("Дедлайн успешно добавлен!", reply_markup=get_main_keyboard())
         return ConversationHandler.END
     except ValueError:
         await update.message.reply_text("Пожалуйста, введите числовое значение.", reply_markup=get_main_keyboard())
         return ADD_DEADLINE_REMINDER
+
+# === ПОКАЗ РАСПИСАНИЯ И ДЕДЛАЙНОВ ===
 
 async def get_schedule(user_id):
     """Получает расписание пользователя."""
@@ -212,127 +206,146 @@ async def get_deadlines(user_id):
     user_data = await load_user_data(user_id)
     return user_data.get('deadlines', [])
 
-async def add_item(user_id, collection_name, item):
-    user_data = await load_user_data(user_id)
-    user_data[collection_name].append(item)
-    save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
-
-async def update_item(user_id, collection_name, item_index, item):
-    user_data = await load_user_data(user_id)
-    user_data[collection_name][item_index] = item
-    save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
-
-async def delete_item(user_id, collection_name, item_index):
-    user_data = await load_user_data(user_id)
-    del user_data[collection_name][item_index]
-    save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
-
 async def manage_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Упрощенная версия - показывает расписание без группировки"""
+    """Показывает расписание пользователя."""
     user_id = str(update.effective_user.id)
     items = await get_schedule(user_id)
+    
+    # 🔥 ДОБАВИМ ОТЛАДОЧНУЮ ИНФОРМАЦИЮ
+    logger.info(f"User {user_id} requested schedule. Items count: {len(items)}")
     
     if not items:
         await update.message.reply_text("Ваше расписание пусто.", reply_markup=get_main_keyboard())
         return ConversationHandler.END
 
+    # Группируем по дням
+    grouped = defaultdict(list)
+    for item in items:
+        grouped[item['day']].append(item)
+    
     text = "📅 Ваше расписание:\n\n"
     keyboard = []
     
-    # Сортируем по дням недели и времени
-    items_sorted = sorted(items, key=lambda x: (
-        WEEKDAYS.index(x['day'].lower()) if x['day'].lower() in WEEKDAYS else len(WEEKDAYS),
-        x['time']
-    ))
-    
-    current_day = None
-    for i, item in enumerate(items_sorted):
-        if item['day'] != current_day:
-            current_day = item['day']
-            text += f"**{current_day.capitalize()}**:\n"
-        
-        text += f"• {item['className']} ({item['time']}) - {item['professor']}\n"
-        
-        keyboard.append([
-            InlineKeyboardButton(f"✏️ {item['className']}", callback_data=f"edit_item_{i}"),
-            InlineKeyboardButton(f"🗑️ {item['className']}", callback_data=f"delete_schedule_{i}"),
-        ])
+    # Сортируем дни по порядку недели
+    for day in WEEKDAYS:
+        if day in grouped:
+            text += f"**{day.capitalize()}**:\n"
+            day_items = sorted(grouped[day], key=lambda x: x['time'])
+            
+            for i, item in enumerate(day_items, 1):
+                text += f"{i}. {item['className']} ({item['time']}) - {item['professor']}\n"
+            
+            keyboard.append([
+                InlineKeyboardButton(f"Редактировать {day}", callback_data=f"edit_day_{day}"),
+            ])
+            text += "\n"
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
-    return EDIT_SCHEDULE_FIELD
+    return EDIT_SCHEDULE_DAY
 
 async def manage_deadlines(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Показывает список дедлайнов с кнопками."""
+    """Показывает дедлайны пользователя."""
     user_id = str(update.effective_user.id)
     items = await get_deadlines(user_id)
+    
     if not items:
         await update.message.reply_text("У вас нет дедлайнов.", reply_markup=get_main_keyboard())
         return ConversationHandler.END
 
+    # Сортируем по дате
     items.sort(key=lambda x: datetime.strptime(x['datetime'], "%Y-%m-%d %H:%M"))
-
-    text = "Ваши дедлайны:\n\n"
+    
+    text = "📝 Ваши дедлайны:\n\n"
     keyboard = []
-    for i, item in enumerate(items):
-        item['original_index'] = i
-        try:
-            deadline_dt = datetime.strptime(item['datetime'], "%Y-%m-%d %H:%M")
-            formatted_date = deadline_dt.strftime('%d.%m.%Y %H:%M')
-        except ValueError:
-            formatted_date = "Неверный формат даты"
-            
-        text += f"{i + 1}. **{item['name']}**: до {formatted_date}\n"
-        if item['description']:
-            text += f"Описание: {item['description']}\n"
+    
+    for i, item in enumerate(items, 1):
+        deadline_dt = datetime.strptime(item['datetime'], "%Y-%m-%d %H:%M")
+        formatted_date = deadline_dt.strftime('%d.%m.%Y %H:%M')
+        
+        text += f"{i}. **{item['name']}** - до {formatted_date}\n"
+        if item.get('description'):
+            text += f"   Описание: {item['description']}\n"
+        
         keyboard.append([
-            InlineKeyboardButton(f"Редактировать {item['name']}", callback_data=f"edit_deadline_{i}"),
-            InlineKeyboardButton(f"Удалить {item['name']}", callback_data=f"delete_deadline_{i}"),
+            InlineKeyboardButton(f"✏️ {item['name']}", callback_data=f"edit_deadline_{i-1}"),
+            InlineKeyboardButton(f"🗑️ {item['name']}", callback_data=f"delete_deadline_{i-1}"),
         ])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
     return EDIT_DEADLINE_FIELD
 
+# === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
+
+async def add_item(user_id, collection_name, item):
+    """Добавляет элемент в коллекцию."""
+    user_data = await load_user_data(user_id)
+    user_data[collection_name].append(item)
+    await save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
+
+async def update_item(user_id, collection_name, item_index, item):
+    """Обновляет элемент в коллекции."""
+    user_data = await load_user_data(user_id)
+    user_data[collection_name][item_index] = item
+    await save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
+
+async def delete_item(user_id, collection_name, item_index):
+    """Удаляет элемент из коллекции."""
+    user_data = await load_user_data(user_id)
+    if 0 <= item_index < len(user_data[collection_name]):
+        del user_data[collection_name][item_index]
+        await save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
+        return True
+    return False
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Отменяет текущий диалог."""
+    await update.message.reply_text("Действие отменено.", reply_markup=get_main_keyboard())
+    return ConversationHandler.END
+
+# === РЕДАКТИРОВАНИЕ РАСПИСАНИЯ ===
+
 async def edit_schedule_day_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Показывает список пар для выбранного дня."""
+    """Показывает пары выбранного дня для редактирования."""
     query = update.callback_query
     await query.answer()
     
     selected_day = query.data.split('_')[2]
-    context.user_data['selected_day'] = selected_day
-    
     user_id = str(query.from_user.id)
     items = await get_schedule(user_id)
     
-    day_items = sorted([item for item in items if item['day'].lower() == selected_day.lower()], key=lambda x: x['time'])
+    day_items = [item for item in items if item['day'] == selected_day]
+    day_items.sort(key=lambda x: x['time'])
     
     if not day_items:
-        await query.edit_message_text(f"В этот день у вас нет пар.")
+        await query.edit_message_text(f"В {selected_day} у вас нет пар.")
         return ConversationHandler.END
 
     text = f"Пары на {selected_day.capitalize()}:\n\n"
     keyboard = []
+    
     for i, item in enumerate(day_items):
-        text += f"{i+1}. {item['className']}, {item['time']}, {item['professor']}\n"
+        text += f"{i+1}. {item['className']} ({item['time']}) - {item['professor']}\n"
+        
+        # Находим оригинальный индекс в общем списке
         original_index = items.index(item)
         keyboard.append([
-            InlineKeyboardButton(f"Редактировать {item['className']}", callback_data=f"edit_item_{original_index}"),
-            InlineKeyboardButton(f"Удалить {item['className']}", callback_data=f"delete_schedule_{original_index}"),
+            InlineKeyboardButton(f"✏️ {item['className']}", callback_data=f"edit_schedule_{original_index}"),
+            InlineKeyboardButton(f"🗑️ {item['className']}", callback_data=f"delete_schedule_{original_index}"),
         ])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(text, reply_markup=reply_markup)
-    
     return EDIT_SCHEDULE_FIELD
 
 async def edit_schedule_item_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Выбирает поле для редактирования для конкретной пары."""
+    """Выбирает поле для редактирования пары."""
     query = update.callback_query
     await query.answer()
     
     item_index = int(query.data.split('_')[2])
-    context.user_data['item_index'] = item_index
+    context.user_data['schedule_index'] = item_index
 
     keyboard = [
         [InlineKeyboardButton("День", callback_data="field_day")],
@@ -346,48 +359,50 @@ async def edit_schedule_item_callback(update: Update, context: ContextTypes.DEFA
     await query.edit_message_text("Что вы хотите отредактировать?", reply_markup=reply_markup)
     return EDIT_SCHEDULE_VALUE
 
-async def edit_schedule_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Запрашивает новое значение для выбранного поля."""
+async def edit_schedule_field(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Запрашивает новое значение для выбранного поля пары."""
     query = update.callback_query
     await query.answer()
 
-    context.user_data['field_to_edit'] = query.data.split('_')[1]
+    context.user_data['schedule_field'] = query.data.split('_')[1]
     await query.edit_message_text("Введите новое значение:", reply_markup=None)
     
-    return ConversationHandler.END
+    return EDIT_SCHEDULE_VALUE
 
-async def update_schedule_value_from_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def update_schedule_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обновляет значение пары."""
     user_id = str(update.effective_user.id)
-    item_index = context.user_data['item_index']
-    field_to_edit = context.user_data['field_to_edit']
+    item_index = context.user_data['schedule_index']
+    field = context.user_data['schedule_field']
     new_value = update.message.text.strip()
     
-    if field_to_edit == 'reminderBefore':
+    # Валидация
+    if field == 'reminderBefore':
         try:
             new_value = int(new_value)
         except ValueError:
-            await update.message.reply_text("Пожалуйста, введите числовое значение для напоминания.", reply_markup=get_main_keyboard())
+            await update.message.reply_text("Пожалуйста, введите число для напоминания.", reply_markup=get_main_keyboard())
             return EDIT_SCHEDULE_VALUE
-        
-    user_data = await load_user_data(user_id)
-    if item_index >= len(user_data['schedule']):
-        await update.message.reply_text("Произошла ошибка. Пожалуйста, начните редактирование заново.", reply_markup=get_main_keyboard())
-        return ConversationHandler.END
-        
-    item = user_data['schedule'][item_index]
-    item[field_to_edit] = new_value
-    save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
     
-    await update.message.reply_text("Расписание успешно обновлено!", reply_markup=get_main_keyboard())
+    user_data = await load_user_data(user_id)
+    if 0 <= item_index < len(user_data['schedule']):
+        user_data['schedule'][item_index][field] = new_value
+        await save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
+        await update.message.reply_text("Расписание обновлено!", reply_markup=get_main_keyboard())
+    else:
+        await update.message.reply_text("Ошибка: элемент не найден.", reply_markup=get_main_keyboard())
+    
     return ConversationHandler.END
 
+# === РЕДАКТИРОВАНИЕ ДЕДЛАЙНОВ ===
+
 async def edit_deadline_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Выбирает поле для редактирования для конкретного дедлайна."""
+    """Выбирает поле для редактирования дедлайна."""
     query = update.callback_query
     await query.answer()
     
     item_index = int(query.data.split('_')[2])
-    context.user_data['item_index'] = item_index
+    context.user_data['deadline_index'] = item_index
 
     keyboard = [
         [InlineKeyboardButton("Название", callback_data="field_name")],
@@ -401,82 +416,81 @@ async def edit_deadline_callback(update: Update, context: ContextTypes.DEFAULT_T
     return EDIT_DEADLINE_VALUE
 
 async def edit_deadline_field(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Запрашивает новое значение для выбранного поля."""
+    """Запрашивает новое значение для выбранного поля дедлайна."""
     query = update.callback_query
     await query.answer()
 
-    context.user_data['field_to_edit'] = query.data.split('_')[1]
+    context.user_data['deadline_field'] = query.data.split('_')[1]
     await query.edit_message_text("Введите новое значение:", reply_markup=None)
     
-    return ConversationHandler.END
+    return EDIT_DEADLINE_VALUE
 
-async def update_deadline_value_from_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Обновляет значение в дедлайне."""
+async def update_deadline_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обновляет значение дедлайна."""
     user_id = str(update.effective_user.id)
-    item_index = context.user_data['item_index']
-    field_to_edit = context.user_data['field_to_edit']
+    item_index = context.user_data['deadline_index']
+    field = context.user_data['deadline_field']
     new_value = update.message.text.strip()
     
-    if field_to_edit == 'datetime':
+    # Валидация
+    if field == 'datetime':
         try:
             datetime.strptime(new_value, "%Y-%m-%d %H:%M")
         except ValueError:
-            await update.message.reply_text("Неверный формат даты. Пожалуйста, попробуйте еще раз в формате ГГГГ-ММ-ДД ЧЧ:ММ.", reply_markup=get_main_keyboard())
+            await update.message.reply_text("Неверный формат даты. Используйте ГГГГ-ММ-ДД ЧЧ:ММ", reply_markup=get_main_keyboard())
             return EDIT_DEADLINE_VALUE
-    elif field_to_edit == 'reminderBefore':
+    elif field == 'reminderBefore':
         try:
             new_value = int(new_value)
         except ValueError:
-            await update.message.reply_text("Пожалуйста, введите числовое значение для напоминания.", reply_markup=get_main_keyboard())
+            await update.message.reply_text("Пожалуйста, введите число для напоминания.", reply_markup=get_main_keyboard())
             return EDIT_DEADLINE_VALUE
 
     user_data = await load_user_data(user_id)
-    if item_index >= len(user_data['deadlines']):
-        await update.message.reply_text("Произошла ошибка. Пожалуйста, начните редактирование заново.", reply_markup=get_main_keyboard())
-        return ConversationHandler.END
-
-    item = user_data['deadlines'][item_index]
-    item[field_to_edit] = new_value
-    save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
+    if 0 <= item_index < len(user_data['deadlines']):
+        user_data['deadlines'][item_index][field] = new_value
+        await save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
+        await update.message.reply_text("Дедлайн обновлен!", reply_markup=get_main_keyboard())
+    else:
+        await update.message.reply_text("Ошибка: дедлайн не найден.", reply_markup=get_main_keyboard())
     
-    await update.message.reply_text("Дедлайн успешно обновлен!", reply_markup=get_main_keyboard())
     return ConversationHandler.END
+
+# === УДАЛЕНИЕ ===
 
 async def delete_item_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Удаляет элемент по нажатию кнопки."""
     query = update.callback_query
     await query.answer()
-    user_id = str(query.from_user.id)
     
+    user_id = str(query.from_user.id)
     parts = query.data.split('_')
     item_type = parts[1]
     item_index = int(parts[2])
-    collection_name = 'schedule' if item_type == 'schedule' else 'deadlines'
     
-    await delete_item(user_id, collection_name, item_index)
-    await query.message.reply_text(f"{'Пара' if item_type == 'schedule' else 'Дедлайн'} успешно удалена!", reply_markup=get_main_keyboard())
+    collection_name = 'schedule' if item_type == 'schedule' else 'deadlines'
+    item_name = 'пару' if item_type == 'schedule' else 'дедлайн'
+    
+    success = await delete_item(user_id, collection_name, item_index)
+    
+    if success:
+        await query.message.reply_text(f"{item_name.capitalize()} успешно удален(а)!", reply_markup=get_main_keyboard())
+    else:
+        await query.message.reply_text("Ошибка при удалении.", reply_markup=get_main_keyboard())
 
-async def schedule_reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Проверяет расписание и отправляет напоминания."""
-    # Для упрощения временно отключим напоминания в этой версии
-    pass
-
-async def deadline_reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Проверяет дедлайны и отправляет напоминания."""
-    # Для упрощения временно отключим напоминания в этой версии
-    pass
+# === ОБРАБОТЧИКИ ОШИБОК ===
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик ошибок"""
     logger.error(f"Ошибка: {context.error}")
 
-# === FLASK WEBHOOK HANDLING ===
+# === РЕГИСТРАЦИЯ ОБРАБОТЧИКОВ ===
 
 def register_handlers():
     """Регистрирует все обработчики"""
     application.add_handler(CommandHandler("start", start))
     
-    # ConversationHandler для добавления расписания
+    # Добавление расписания
     conv_handler_add_schedule = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Добавить расписание$"), start_add_schedule)],
         states={
@@ -492,7 +506,7 @@ def register_handlers():
         fallbacks=[CommandHandler("cancel", cancel)],
     )
 
-    # ConversationHandler для добавления дедлайна
+    # Добавление дедлайна
     conv_handler_add_deadline = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Добавить дедлайн$"), start_add_deadline)],
         states={
@@ -504,28 +518,28 @@ def register_handlers():
         fallbacks=[CommandHandler("cancel", cancel)],
     )
 
-    # ConversationHandler для редактирования расписания
+    # Редактирование расписания
     conv_handler_edit_schedule = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Мое расписание$"), manage_schedule)],
         states={
             EDIT_SCHEDULE_DAY: [CallbackQueryHandler(edit_schedule_day_callback, pattern="^edit_day_")],
-            EDIT_SCHEDULE_FIELD: [CallbackQueryHandler(edit_schedule_item_callback, pattern="^edit_item_")],
+            EDIT_SCHEDULE_FIELD: [CallbackQueryHandler(edit_schedule_item_callback, pattern="^edit_schedule_")],
             EDIT_SCHEDULE_VALUE: [
-                CallbackQueryHandler(edit_schedule_value, pattern="^field_"),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, update_schedule_value_from_text)
+                CallbackQueryHandler(edit_schedule_field, pattern="^field_"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, update_schedule_value)
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
 
-    # ConversationHandler для редактирования дедлайна
+    # Редактирование дедлайнов
     conv_handler_edit_deadline = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Мои дедлайны$"), manage_deadlines)],
         states={
             EDIT_DEADLINE_FIELD: [CallbackQueryHandler(edit_deadline_callback, pattern="^edit_deadline_")],
             EDIT_DEADLINE_VALUE: [
                 CallbackQueryHandler(edit_deadline_field, pattern="^field_"),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, update_deadline_value_from_text)
+                MessageHandler(filters.TEXT & ~filters.COMMAND, update_deadline_value)
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
@@ -536,89 +550,81 @@ def register_handlers():
     application.add_handler(conv_handler_edit_schedule)
     application.add_handler(conv_handler_edit_deadline)
     
-    # Отдельные обработчики для удаления
-    application.add_handler(CallbackQueryHandler(delete_item_callback, pattern="^delete_"))
+    # Обработчики удаления
+    application.add_handler(CallbackQueryHandler(delete_item_callback, pattern="^delete_schedule_"))
+    application.add_handler(CallbackQueryHandler(delete_item_callback, pattern="^delete_deadline_"))
+    
     application.add_error_handler(error_handler)
+
+# === FLASK WEBHOOK ===
 
 @app.route('/')
 def index():
-    logger.info("Health check received")
-    return "Bot is running with webhooks!"
+    return "Bot is running!"
 
 @app.route('/webhook/' + TOKEN, methods=['POST'])
 def webhook():
-    """Endpoint для получения обновлений от Telegram"""
+    """Endpoint для webhook."""
     try:
-        logger.info("Webhook request received")
-        
         json_data = request.get_json()
-        
         if not json_data:
-            logger.error("Empty JSON in webhook request")
             return 'empty json', 400
             
-        logger.info(f"Update type: {json_data.keys()}")
-        
         update = Update.de_json(json_data, application.bot)
         
-        # 🔥 ПРОСТОЙ ФИКС - обрабатываем сразу в этом потоке
+        # Обрабатываем update асинхронно
         async def process_update():
             await application.process_update(update)
         
-        # Создаем новый event loop для этого запроса
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         loop.run_until_complete(process_update())
         loop.close()
         
-        logger.info("Update processed successfully")
         return 'ok'
         
     except Exception as e:
-        logger.error(f"Error in webhook: {str(e)}")
+        logger.error(f"Webhook error: {str(e)}")
         return 'error', 500
-    
+
+# === ЗАПУСК ПРИЛОЖЕНИЯ ===
+
 if __name__ == '__main__':
     import threading
     
-    # Функция для запуска asyncio в отдельном потоке
     def run_async_tasks():
+        """Запускает асинхронные задачи в отдельном потоке."""
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
         try:
-            # 1. Инициализируем базу данных
+            # Инициализация БД
             logger.info("🔄 Initializing database...")
             loop.run_until_complete(init_database())
             
-            # 2. Инициализируем application
+            # Инициализация приложения
             logger.info("🔄 Initializing application...")
             loop.run_until_complete(application.initialize())
-            logger.info("✅ Application initialized successfully")
             
-            # 3. Устанавливаем webhook
+            # Установка webhook
             logger.info("🔄 Setting up webhook...")
             
             async def set_webhook_async():
-                try:
-                    railway_url = os.environ.get('RAILWAY_STATIC_URL')
-                    if not railway_url:
-                        logger.error("RAILWAY_STATIC_URL not found!")
-                        return False
-                        
-                    if not railway_url.startswith('https://'):
-                        railway_url = f"https://{railway_url}"
-                        
-                    webhook_url = f"{railway_url}/webhook/{TOKEN}"
-                    logger.info(f"Setting webhook to: {webhook_url}")
-                    
-                    await application.bot.delete_webhook()
-                    result = await application.bot.set_webhook(webhook_url)
-                    logger.info(f"Webhook set result: {result}")
-                    return True
-                except Exception as e:
-                    logger.error(f"Error setting webhook: {e}")
+                railway_url = os.environ.get('RAILWAY_STATIC_URL')
+                if not railway_url:
+                    logger.error("RAILWAY_STATIC_URL not found!")
                     return False
+                    
+                if not railway_url.startswith('https://'):
+                    railway_url = f"https://{railway_url}"
+                    
+                webhook_url = f"{railway_url}/webhook/{TOKEN}"
+                logger.info(f"Setting webhook to: {webhook_url}")
+                
+                await application.bot.delete_webhook()
+                result = await application.bot.set_webhook(webhook_url)
+                logger.info(f"Webhook set result: {result}")
+                return True
             
             success = loop.run_until_complete(set_webhook_async())
             if success:
@@ -628,18 +634,15 @@ if __name__ == '__main__':
                 
         except Exception as e:
             logger.error(f"❌ Failed to start bot: {e}")
-        finally:
-            # НЕ закрываем loop, чтобы он работал для webhook запросов
-            pass
     
     # Запускаем асинхронные задачи в отдельном потоке
     async_thread = threading.Thread(target=run_async_tasks, daemon=True)
     async_thread.start()
     
-    # Регистрируем обработчики в основном потоке
+    # Регистрируем обработчики
     register_handlers()
     
-    # Запускаем Flask в основном потоке
+    # Запускаем Flask
     port = int(os.environ.get('PORT', 8080))
     logger.info(f"🚀 Starting Flask on port {port}")
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
