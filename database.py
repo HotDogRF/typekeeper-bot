@@ -47,6 +47,9 @@ async def save_user_data(user_id, schedule, deadlines):
         return False
         
     try:
+        # 🔥 ПРЕОБРАЗУЕМ user_id В INT
+        user_id_int = int(user_id)
+        
         await conn.execute('''
             INSERT INTO users (user_id, schedule, deadlines)
             VALUES ($1, $2, $3)
@@ -54,7 +57,7 @@ async def save_user_data(user_id, schedule, deadlines):
             DO UPDATE SET 
                 schedule = EXCLUDED.schedule,
                 deadlines = EXCLUDED.deadlines
-        ''', user_id, json.dumps(schedule), json.dumps(deadlines))
+        ''', user_id_int, json.dumps(schedule), json.dumps(deadlines))  # 🔥 передаем число
         
         print(f"✅ Данные пользователя {user_id} сохранены в БД")
         return True
@@ -72,9 +75,12 @@ async def load_user_data(user_id):
         return {'schedule': [], 'deadlines': []}
         
     try:
+        # 🔥 ПРЕОБРАЗУЕМ user_id В INT
+        user_id_int = int(user_id)
+        
         result = await conn.fetchrow(
             'SELECT schedule, deadlines FROM users WHERE user_id = $1', 
-            user_id
+            user_id_int  # 🔥 передаем число вместо строки
         )
         
         if result:
