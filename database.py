@@ -57,11 +57,10 @@ async def create_user_if_not_exists(user_id: int) -> bool:
         if not conn:
             return False
             
-        # 🔥 ИСПРАВЛЕНИЕ: преобразуем списки в JSON строки
+        # 🔥 ПРЕОБРАЗУЕМ В JSON СТРОКИ
         empty_schedule_json = json.dumps([])
         empty_deadlines_json = json.dumps([])
             
-        # Пробуем вставить пользователя, игнорируем если уже существует
         await conn.execute('''
             INSERT INTO users (user_id, schedule, deadlines)
             VALUES ($1, $2, $3)
@@ -83,9 +82,7 @@ async def save_user_data(user_id: int, schedule: List[Dict], deadlines: List[Dic
     """Сохраняет данные пользователя в базу данных"""
     conn = None
     try:
-        # Сначала гарантируем, что пользователь существует
         await create_user_if_not_exists(user_id)
-        
         conn = await get_db_connection()
         if not conn:
             return False
@@ -97,24 +94,10 @@ async def save_user_data(user_id: int, schedule: List[Dict], deadlines: List[Dic
         print(f"   deadlines type: {type(deadlines)}")
         print(f"   deadlines: {deadlines}")
         
-        # 🔥 ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА ТИПОВ
-        if not isinstance(schedule, list):
-            print(f"❌ ОШИБКА: schedule не является списком, а {type(schedule)}: {schedule}")
-            return False
-            
-        if not isinstance(deadlines, list):
-            print(f"❌ ОШИБКА: deadlines не является списком, а {type(deadlines)}: {deadlines}")
-            return False
-        
-        # 🔥 ИСПРАВЛЕНИЕ: преобразуем списки в JSON строки
+        # 🔥 ПРЕОБРАЗУЕМ В JSON СТРОКИ
         schedule_json = json.dumps(schedule, ensure_ascii=False)
         deadlines_json = json.dumps(deadlines, ensure_ascii=False)
         
-        print(f"🔍 JSON данные:")
-        print(f"   schedule_json: {schedule_json}")
-        print(f"   deadlines_json: {deadlines_json}")
-        
-        # Обновляем данные пользователя
         await conn.execute('''
             UPDATE users 
             SET schedule = $2, deadlines = $3
@@ -138,9 +121,7 @@ async def load_user_data(user_id: int) -> Dict[str, List]:
     """Загружает данные пользователя из базы данных"""
     conn = None
     try:
-        # Гарантируем, что пользователь существует
         await create_user_if_not_exists(user_id)
-        
         conn = await get_db_connection()
         if not conn:
             return {'schedule': [], 'deadlines': []}
@@ -151,19 +132,38 @@ async def load_user_data(user_id: int) -> Dict[str, List]:
         )
         
         if result:
-            # 🔥 ИСПРАВЛЕНИЕ: данные уже загружаются как Python объекты благодаря asyncpg
-            # но добавим дополнительную проверку
-            schedule = result['schedule'] if result['schedule'] else []
-            deadlines = result['deadlines'] if result['deadlines'] else []
-
+            schedule_data = result['schedule']
+            deadlines_data = result['deadlines']
             
-            print(f"✅ Данные пользователя {user_id} загружены из БД")
+            # 🔥 ПРЕОБРАЗУЕМ JSON СТРОКИ ОБРАТНО В СПИСКИ
+            def parse_json_field(data):
+                if data is None:
+                    return []
+                elif isinstance(data, str):
+                    try:
+                        return json.loads(data)
+                    except json.JSONDecodeError:
+                        print(f"⚠️ Ошибка парсинга JSON: {data}")
+                        return []
+                elif isinstance(data, list):
+                    return data
+                else:
+                    print(f"⚠️ Неизвестный тип данных: {type(data)}")
+                    return []
+            
+            schedule = parse_json_field(schedule_data)
+            deadlines = parse_json_field(deadlines_data)
+            
+            print(f"✅ Данные пользователя {user_id} загружены:")
+            print(f"   schedule: {len(schedule)} элементов")
+            print(f"   deadlines: {len(deadlines)} элементов")
+            
             return {
                 'schedule': schedule,
                 'deadlines': deadlines
             }
         else:
-            print(f"⚠️ Неожиданно: пользователь {user_id} не найден после create_user_if_not_exists")
+            print(f"⚠️ Пользователь {user_id} не найден")
             return {'schedule': [], 'deadlines': []}
             
     except Exception as e:

@@ -310,6 +310,7 @@ async def add_schedule_reminder(update: Update, context: ContextTypes.DEFAULT_TY
         
         # Добавляем новое расписание
         new_schedule_item = context.user_data['schedule_data']
+        
         user_data['schedule'].append(new_schedule_item)
         
         logger.info(f"🔍 USER DATA AFTER ADDING:")
