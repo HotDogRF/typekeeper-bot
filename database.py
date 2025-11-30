@@ -155,21 +155,7 @@ async def load_user_data(user_id: int) -> Dict[str, List]:
             # но добавим дополнительную проверку
             schedule = result['schedule'] if result['schedule'] else []
             deadlines = result['deadlines'] if result['deadlines'] else []
-            
-            # 🔥 ГАРАНТИРУЕМ ЧТО ВОЗВРАЩАЕМ СПИСКИ
-            if not isinstance(schedule, list):
-                print(f"⚠️ Предупреждение: schedule не список, а {type(schedule)}, преобразовываем")
-                try:
-                    schedule = json.loads(schedule) if isinstance(schedule, str) else []
-                except:
-                    schedule = []
-                    
-            if not isinstance(deadlines, list):
-                print(f"⚠️ Предупреждение: deadlines не список, а {type(deadlines)}, преобразовываем")
-                try:
-                    deadlines = json.loads(deadlines) if isinstance(deadlines, str) else []
-                except:
-                    deadlines = []
+
             
             print(f"✅ Данные пользователя {user_id} загружены из БД")
             return {
