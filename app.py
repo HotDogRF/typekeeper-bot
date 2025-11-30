@@ -231,30 +231,73 @@ async def add_schedule_professor(update: Update, context: ContextTypes.DEFAULT_T
 async def add_schedule_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Сохраняет напоминание и добавляет запись в БД."""
     try:
-        reminder_minutes = int(update.message.text.strip())
-        context.user_data['schedule_data']['reminderBefore'] = reminder_minutes
         user_id = str(update.message.from_user.id)
+        reminder_text = update.message.text.strip()
+        
+        # 🔥 ПРОВЕРЯЕМ, ЧТО ЭТО ДЕЙСТВИТЕЛЬНО ЧИСЛО ДЛЯ НАПОМИНАНИЯ
+        if not reminder_text.isdigit():
+            # Если это не число, возможно, это команда - завершаем диалог
+            if reminder_text in ["Добавить расписание", "Добавить дедлайн", "Мое расписание", "Мои дедлайны"]:
+                await update.message.reply_text(
+                    "❌ Диалог добавления расписания прерван. Выберите действие заново:",
+                    reply_markup=get_main_keyboard()
+                )
+                return ConversationHandler.END
+            else:
+                await update.message.reply_text(
+                    "❌ Пожалуйста, введите числовое значение (например: 15).",
+                    reply_markup=get_main_keyboard()
+                )
+                return ADD_SCHEDULE_REMINDER
+        
+        reminder_minutes = int(reminder_text)
+        context.user_data['schedule_data']['reminderBefore'] = reminder_minutes
+        
+        # 🔥 ДЕБАГ: Логируем данные перед сохранением
+        print(f"🔍 DEBUG: Сохраняем schedule_data: {context.user_data['schedule_data']}")
         
         # Загружаем текущие данные
         user_data = await load_user_data(user_id)
+        print(f"🔍 DEBUG: Загруженные данные: {user_data}")
+        
         # Добавляем новое расписание
         user_data['schedule'].append(context.user_data['schedule_data'])
-        # Сохраняем в БД
-        await save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
         
-        await update.message.reply_text(
-            "✅ Расписание успешно добавлено!",
-            reply_markup=get_main_keyboard()
+        # 🔥 ЯВНО ПЕРЕДАЕМ СПИСКИ, А НЕ СЛОВАРИ
+        success = await save_user_data(
+            user_id, 
+            user_data['schedule'],  # Это должен быть list
+            user_data['deadlines']  # Это должен быть list
         )
         
-        # 🔥 ЛОГИРУЕМ УСПЕШНОЕ ДОБАВЛЕНИЕ
-        logger.info(f"✅ Добавлено расписание для пользователя {user_id}")
-        
-        return ConversationHandler.END
+        if success:
+            await update.message.reply_text(
+                "✅ Расписание успешно добавлено!",
+                reply_markup=get_main_keyboard()
+            )
+            
+            # 🔥 ОЧИЩАЕМ ДАННЫЕ ДИАЛОГА
+            context.user_data.pop('schedule_data', None)
+            
+            logger.info(f"✅ Добавлено расписание для пользователя {user_id}")
+            return ConversationHandler.END
+        else:
+            await update.message.reply_text(
+                "❌ Ошибка при сохранении расписания. Попробуйте еще раз.",
+                reply_markup=get_main_keyboard()
+            )
+            return ADD_SCHEDULE_REMINDER
         
     except ValueError:
         await update.message.reply_text(
-            "❌ Пожалуйста, введите числовое значение.",
+            "❌ Пожалуйста, введите числовое значение (например: 15).",
+            reply_markup=get_main_keyboard()
+        )
+        return ADD_SCHEDULE_REMINDER
+    except Exception as e:
+        logger.error(f"❌ Неожиданная ошибка в add_schedule_reminder: {e}")
+        await update.message.reply_text(
+            "❌ Произошла непредвиденная ошибка. Попробуйте еще раз.",
             reply_markup=get_main_keyboard()
         )
         return ADD_SCHEDULE_REMINDER

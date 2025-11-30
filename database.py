@@ -70,6 +70,9 @@ async def init_database():
 
 async def save_user_data(user_id, schedule, deadlines):
     """Сохраняет данные пользователя в базу данных"""
+    # Сначала гарантируем, что пользователь существует
+    await ensure_user_exists(user_id)
+    
     conn = await get_db_connection()
     if not conn:
         return False
@@ -77,14 +80,25 @@ async def save_user_data(user_id, schedule, deadlines):
     try:
         user_id_int = int(user_id)
         
-        # 🔥 ИСПРАВЛЕНИЕ: убираем json.dumps - asyncpg автоматически конвертирует Python объекты в JSONB
+        # 🔥 ДЕБАГ: Логируем что мы сохраняем
+        print(f"🔍 DEBUG save_user_data:")
+        print(f"   user_id: {user_id_int}")
+        print(f"   schedule type: {type(schedule)}, value: {schedule}")
+        print(f"   deadlines type: {type(deadlines)}, value: {deadlines}")
+        
+        # 🔥 ПРОВЕРЯЕМ ТИПЫ ДАННЫХ
+        if not isinstance(schedule, list):
+            print(f"❌ ОШИБКА: schedule должен быть list, но получили {type(schedule)}")
+            return False
+            
+        if not isinstance(deadlines, list):
+            print(f"❌ ОШИБКА: deadlines должен быть list, но получили {type(deadlines)}")
+            return False
+        
         await conn.execute('''
-            INSERT INTO users (user_id, schedule, deadlines)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (user_id) 
-            DO UPDATE SET 
-                schedule = EXCLUDED.schedule,
-                deadlines = EXCLUDED.deadlines
+            UPDATE users 
+            SET schedule = $2, deadlines = $3
+            WHERE user_id = $1
         ''', user_id_int, schedule, deadlines)
         
         print(f"✅ Данные пользователя {user_id} сохранены в БД")
@@ -92,6 +106,8 @@ async def save_user_data(user_id, schedule, deadlines):
         
     except Exception as e:
         print(f"❌ Ошибка сохранения данных пользователя {user_id}: {e}")
+        import traceback
+        print(f"📋 Детали ошибки: {traceback.format_exc()}")
         return False
         
     finally:
