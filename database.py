@@ -74,7 +74,7 @@ async def create_user_if_not_exists(user_id: int) -> bool:
         if conn:
             await conn.close()
 
-async def save_user_data(user_id: int, schedule: List[Dict], deadlines: List[Dict]) -> bool:
+async def save_user_data(user_id: str, schedule: List[Dict], deadlines: List[Dict]) -> bool:
     """Сохраняет данные пользователя в базу данных"""
     conn = None
     try:
@@ -95,7 +95,7 @@ async def save_user_data(user_id: int, schedule: List[Dict], deadlines: List[Dic
             UPDATE users 
             SET schedule = $2, deadlines = $3
             WHERE user_id = $1
-        ''', user_id, schedule, deadlines)
+        ''', int(user_id), schedule, deadlines)
         
         print(f"✅ Данные пользователя {user_id} сохранены в БД")
         return True
