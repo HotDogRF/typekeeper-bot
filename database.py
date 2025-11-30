@@ -88,8 +88,19 @@ async def save_user_data(user_id: int, schedule: List[Dict], deadlines: List[Dic
         
         print(f"🔍 DEBUG save_user_data:")
         print(f"   user_id: {user_id}")
+        print(f"   schedule type: {type(schedule)}")
         print(f"   schedule: {schedule}")
+        print(f"   deadlines type: {type(deadlines)}")
         print(f"   deadlines: {deadlines}")
+        
+        # 🔥 ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА ТИПОВ
+        if not isinstance(schedule, list):
+            print(f"❌ ОШИБКА: schedule не является списком, а {type(schedule)}: {schedule}")
+            return False
+            
+        if not isinstance(deadlines, list):
+            print(f"❌ ОШИБКА: deadlines не является списком, а {type(deadlines)}: {deadlines}")
+            return False
         
         # Обновляем данные пользователя
         await conn.execute('''
@@ -131,13 +142,21 @@ async def load_user_data(user_id: int) -> Dict[str, List]:
             schedule = result['schedule'] if result['schedule'] else []
             deadlines = result['deadlines'] if result['deadlines'] else []
             
+            # 🔥 ГАРАНТИРУЕМ ЧТО ВОЗВРАЩАЕМ СПИСКИ
+            if not isinstance(schedule, list):
+                print(f"⚠️ Предупреждение: schedule не список, а {type(schedule)}, преобразовываем")
+                schedule = []
+                
+            if not isinstance(deadlines, list):
+                print(f"⚠️ Предупреждение: deadlines не список, а {type(deadlines)}, преобразовываем")
+                deadlines = []
+            
             print(f"✅ Данные пользователя {user_id} загружены из БД")
             return {
                 'schedule': schedule,
                 'deadlines': deadlines
             }
         else:
-            # Это не должно происходить, так как мы создали пользователя выше
             print(f"⚠️ Неожиданно: пользователь {user_id} не найден после create_user_if_not_exists")
             return {'schedule': [], 'deadlines': []}
             

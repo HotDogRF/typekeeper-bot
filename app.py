@@ -269,8 +269,18 @@ async def add_schedule_reminder(update: Update, context: ContextTypes.DEFAULT_TY
         user_data = await load_user_data(user_id)
         logger.info(f"🔍 USER DATA BEFORE: {user_data}")
         
+        # 🔥 ПРОБЛЕМА ЗДЕСЬ: убедимся что schedule_data - это словарь, а не строка
+        schedule_item = context.user_data['schedule_data']
+        if isinstance(schedule_item, str):
+            logger.error(f"❌ schedule_data является строкой: {schedule_item}")
+            await update.message.reply_text(
+                "❌ Ошибка данных. Начните заново.",
+                reply_markup=get_main_keyboard()
+            )
+            return ConversationHandler.END
+        
         # Добавляем новое расписание
-        user_data['schedule'].append(context.user_data['schedule_data'])
+        user_data['schedule'].append(schedule_item)
         
         # 🔥 СОХРАНЯЕМ ДАННЫЕ
         success = await save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
@@ -860,7 +870,22 @@ async def clear_state(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✅ Состояние очищено. Вы можете начать заново.",
         reply_markup=get_main_keyboard()
     )
-
+# Инфа о типах данных пользователя в бд
+async def debug_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показывает отладочную информацию о данных"""
+    user_id = update.effective_user.id
+    user_data = await load_user_data(user_id)
+    
+    debug_text = f"""
+🔍 ДЕБАГ ИНФОРМАЦИЯ:
+User ID: {user_id}
+Schedule type: {type(user_data['schedule'])}
+Schedule: {user_data['schedule']}
+Deadlines type: {type(user_data['deadlines'])}
+Deadlines: {user_data['deadlines']}
+Context data: {context.user_data}
+"""
+    await update.message.reply_text(debug_text)
 # ==================== РЕГИСТРАЦИЯ ОБРАБОТЧИКОВ ====================
 
 def register_handlers():
@@ -875,6 +900,7 @@ def register_handlers():
     application.add_handler(CommandHandler("reset_db", reset_database))
     application.add_handler(CommandHandler("create_user", force_create_user))  # 🔥 ДОБАВЛЕНО
     application.add_handler(CommandHandler("clear", clear_state)) 
+    application.add_handler(CommandHandler("debug", debug_data))
     # 🔥 ШАГ 2: Регистрируем ConversationHandler с ВКЛЮЧЕННЫМИ callback-обработчиками
     
     # Добавление расписания - ВАЖНО: добавляем callback для выбора дня
