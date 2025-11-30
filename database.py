@@ -57,12 +57,16 @@ async def create_user_if_not_exists(user_id: int) -> bool:
         if not conn:
             return False
             
+        # 🔥 ИСПРАВЛЕНИЕ: преобразуем списки в JSON строки
+        empty_schedule_json = json.dumps([])
+        empty_deadlines_json = json.dumps([])
+            
         # Пробуем вставить пользователя, игнорируем если уже существует
         await conn.execute('''
             INSERT INTO users (user_id, schedule, deadlines)
             VALUES ($1, $2, $3)
             ON CONFLICT (user_id) DO NOTHING
-        ''', user_id, [], [])
+        ''', user_id, empty_schedule_json, empty_deadlines_json)
         
         print(f"✅ Пользователь {user_id} гарантированно существует в БД")
         return True
@@ -102,12 +106,20 @@ async def save_user_data(user_id: int, schedule: List[Dict], deadlines: List[Dic
             print(f"❌ ОШИБКА: deadlines не является списком, а {type(deadlines)}: {deadlines}")
             return False
         
+        # 🔥 ИСПРАВЛЕНИЕ: преобразуем списки в JSON строки
+        schedule_json = json.dumps(schedule, ensure_ascii=False)
+        deadlines_json = json.dumps(deadlines, ensure_ascii=False)
+        
+        print(f"🔍 JSON данные:")
+        print(f"   schedule_json: {schedule_json}")
+        print(f"   deadlines_json: {deadlines_json}")
+        
         # Обновляем данные пользователя
         await conn.execute('''
             UPDATE users 
             SET schedule = $2, deadlines = $3
             WHERE user_id = $1
-        ''', user_id, schedule, deadlines)
+        ''', user_id, schedule_json, deadlines_json)
         
         print(f"✅ Данные пользователя {user_id} сохранены в БД")
         return True
@@ -139,17 +151,25 @@ async def load_user_data(user_id: int) -> Dict[str, List]:
         )
         
         if result:
+            # 🔥 ИСПРАВЛЕНИЕ: данные уже загружаются как Python объекты благодаря asyncpg
+            # но добавим дополнительную проверку
             schedule = result['schedule'] if result['schedule'] else []
             deadlines = result['deadlines'] if result['deadlines'] else []
             
             # 🔥 ГАРАНТИРУЕМ ЧТО ВОЗВРАЩАЕМ СПИСКИ
             if not isinstance(schedule, list):
                 print(f"⚠️ Предупреждение: schedule не список, а {type(schedule)}, преобразовываем")
-                schedule = []
-                
+                try:
+                    schedule = json.loads(schedule) if isinstance(schedule, str) else []
+                except:
+                    schedule = []
+                    
             if not isinstance(deadlines, list):
                 print(f"⚠️ Предупреждение: deadlines не список, а {type(deadlines)}, преобразовываем")
-                deadlines = []
+                try:
+                    deadlines = json.loads(deadlines) if isinstance(deadlines, str) else []
+                except:
+                    deadlines = []
             
             print(f"✅ Данные пользователя {user_id} загружены из БД")
             return {
