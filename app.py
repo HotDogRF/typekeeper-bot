@@ -230,72 +230,77 @@ async def add_schedule_professor(update: Update, context: ContextTypes.DEFAULT_T
 
 async def add_schedule_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Сохраняет напоминание и добавляет запись в БД."""
+    user_id = update.effective_user.id
+    
+    # 🔥 ПРЕРЫВАЕМ ЕСЛИ ДАННЫХ НЕТ
+    if 'schedule_data' not in context.user_data:
+        await update.message.reply_text(
+            "❌ Сессия добавления расписания устарела. Начните заново.",
+            reply_markup=get_main_keyboard()
+        )
+        return ConversationHandler.END
+
     try:
-        user_id = str(update.message.from_user.id)
         reminder_text = update.message.text.strip()
         
-        # 🔥 ПРОВЕРЯЕМ, ЧТО ЭТО ДЕЙСТВИТЕЛЬНО ЧИСЛО ДЛЯ НАПОМИНАНИЯ
+        # 🔥 ПРОВЕРКА НА КОМАНДЫ МЕНЮ
+        if reminder_text in ["Добавить расписание", "Добавить дедлайн", "Мое расписание", "Мои дедлайны"]:
+            await update.message.reply_text(
+                "❌ Добавление расписания прервано. Выберите действие заново.",
+                reply_markup=get_main_keyboard()
+            )
+            return ConversationHandler.END
+        
+        # Проверяем что это число
         if not reminder_text.isdigit():
-            # Если это не число, возможно, это команда - завершаем диалог
-            if reminder_text in ["Добавить расписание", "Добавить дедлайн", "Мое расписание", "Мои дедлайны"]:
-                await update.message.reply_text(
-                    "❌ Диалог добавления расписания прерван. Выберите действие заново:",
-                    reply_markup=get_main_keyboard()
-                )
-                return ConversationHandler.END
-            else:
-                await update.message.reply_text(
-                    "❌ Пожалуйста, введите числовое значение (например: 15).",
-                    reply_markup=get_main_keyboard()
-                )
-                return ADD_SCHEDULE_REMINDER
+            await update.message.reply_text(
+                "❌ Пожалуйста, введите числовое значение (например: 15):",
+                reply_markup=get_main_keyboard()
+            )
+            return ADD_SCHEDULE_REMINDER
         
         reminder_minutes = int(reminder_text)
         context.user_data['schedule_data']['reminderBefore'] = reminder_minutes
         
-        # 🔥 ДЕБАГ: Логируем данные перед сохранением
-        print(f"🔍 DEBUG: Сохраняем schedule_data: {context.user_data['schedule_data']}")
+        # 🔥 ДЕБАГ ЛОГИ
+        logger.info(f"🔍 FINAL SCHEDULE DATA: {context.user_data['schedule_data']}")
         
         # Загружаем текущие данные
         user_data = await load_user_data(user_id)
-        print(f"🔍 DEBUG: Загруженные данные: {user_data}")
+        logger.info(f"🔍 USER DATA BEFORE: {user_data}")
         
         # Добавляем новое расписание
         user_data['schedule'].append(context.user_data['schedule_data'])
         
-        # 🔥 ЯВНО ПЕРЕДАЕМ СПИСКИ, А НЕ СЛОВАРИ
-        success = await save_user_data(
-            user_id, 
-            user_data['schedule'],  # Это должен быть list
-            user_data['deadlines']  # Это должен быть list
-        )
+        # 🔥 СОХРАНЯЕМ ДАННЫЕ
+        success = await save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
         
         if success:
+            # 🔥 ОЧИЩАЕМ КОНТЕКСТ ПЕРЕД ЗАВЕРШЕНИЕМ
+            context.user_data.pop('schedule_data', None)
+            
             await update.message.reply_text(
                 "✅ Расписание успешно добавлено!",
                 reply_markup=get_main_keyboard()
             )
             
-            # 🔥 ОЧИЩАЕМ ДАННЫЕ ДИАЛОГА
-            context.user_data.pop('schedule_data', None)
-            
-            logger.info(f"✅ Добавлено расписание для пользователя {user_id}")
+            logger.info(f"✅ Расписание добавлено для пользователя {user_id}")
             return ConversationHandler.END
         else:
             await update.message.reply_text(
-                "❌ Ошибка при сохранении расписания. Попробуйте еще раз.",
+                "❌ Ошибка при сохранении в базу данных. Попробуйте еще раз.",
                 reply_markup=get_main_keyboard()
             )
             return ADD_SCHEDULE_REMINDER
         
     except ValueError:
         await update.message.reply_text(
-            "❌ Пожалуйста, введите числовое значение (например: 15).",
+            "❌ Пожалуйста, введите числовое значение (например: 15):",
             reply_markup=get_main_keyboard()
         )
         return ADD_SCHEDULE_REMINDER
     except Exception as e:
-        logger.error(f"❌ Неожиданная ошибка в add_schedule_reminder: {e}")
+        logger.error(f"❌ Критическая ошибка в add_schedule_reminder: {e}")
         await update.message.reply_text(
             "❌ Произошла непредвиденная ошибка. Попробуйте еще раз.",
             reply_markup=get_main_keyboard()
@@ -835,6 +840,28 @@ async def reset_database(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Ошибка переинициализации БД")
     except Exception as e:
         await update.message.reply_text(f"🚨 Ошибка: {str(e)}")
+# Добавление команд для очиски статуса и добавления пользователя принудительно
+# ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
+
+async def force_create_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Принудительно создает пользователя в БД"""
+    from database import create_user_if_not_exists
+    user_id = update.effective_user.id
+    
+    success = await create_user_if_not_exists(user_id)
+    if success:
+        await update.message.reply_text("✅ Пользователь создан в БД")
+    else:
+        await update.message.reply_text("❌ Ошибка создания пользователя")
+
+async def clear_state(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Принудительно очищает состояние пользователя"""
+    context.user_data.clear()
+    await update.message.reply_text(
+        "✅ Состояние очищено. Вы можете начать заново.",
+        reply_markup=get_main_keyboard()
+    )
+
 # ==================== РЕГИСТРАЦИЯ ОБРАБОТЧИКОВ ====================
 
 def register_handlers():
@@ -847,6 +874,8 @@ def register_handlers():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("test_db", test_db))
     application.add_handler(CommandHandler("reset_db", reset_database))
+    application.add_handler(CommandHandler("create_user", force_create_user))  # 🔥 ДОБАВЛЕНО
+    application.add_handler(CommandHandler("clear", clear_state)) 
     # 🔥 ШАГ 2: Регистрируем ConversationHandler с ВКЛЮЧЕННЫМИ callback-обработчиками
     
     # Добавление расписания - ВАЖНО: добавляем callback для выбора дня

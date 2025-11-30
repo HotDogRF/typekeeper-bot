@@ -1,5 +1,7 @@
 import os
 import asyncpg
+import json
+from typing import Dict, List, Any
 
 async def get_db_connection():
     """Асинхронное подключение к PostgreSQL"""
@@ -19,45 +21,23 @@ async def get_db_connection():
 
 async def init_database():
     """Создает таблицу если её нет"""
+    conn = None
     try:
         conn = await get_db_connection()
         if not conn:
             print("❌ Не удалось подключиться к БД для инициализации")
             return False
             
-        # Проверяем существование таблицы
-        table_exists = await conn.fetchval('''
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables 
-                WHERE table_name = 'users'
-            );
+        # Создаем таблицу если не существует
+        await conn.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                user_id BIGINT PRIMARY KEY,
+                schedule JSONB DEFAULT '[]',
+                deadlines JSONB DEFAULT '[]',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
         ''')
-        
-        if table_exists:
-            print("✅ Таблица users уже существует")
-        else:
-            # Создаем таблицу
-            await conn.execute('''
-                CREATE TABLE IF NOT EXISTS users (
-                    user_id BIGINT PRIMARY KEY,
-                    schedule JSONB DEFAULT '[]',
-                    deadlines JSONB DEFAULT '[]',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            print("✅ Таблица users создана")
-            
-        # Проверяем структуру таблицы
-        columns = await conn.fetch('''
-            SELECT column_name, data_type 
-            FROM information_schema.columns 
-            WHERE table_name = 'users'
-        ''')
-        
-        print("📋 Структура таблицы users:")
-        for col in columns:
-            print(f"   - {col['column_name']}: {col['data_type']}")
-            
+        print("✅ Таблица users создана/проверена")
         return True
         
     except Exception as e:
@@ -68,38 +48,54 @@ async def init_database():
         if conn:
             await conn.close()
 
-async def save_user_data(user_id, schedule, deadlines):
-    """Сохраняет данные пользователя в базу данных"""
-    # Сначала гарантируем, что пользователь существует
-    await ensure_user_exists(user_id)
-    
-    conn = await get_db_connection()
-    if not conn:
-        return False
-        
+async def create_user_if_not_exists(user_id: int) -> bool:
+    """Создает пользователя если не существует"""
+    conn = None
     try:
-        user_id_int = int(user_id)
-        
-        # 🔥 ДЕБАГ: Логируем что мы сохраняем
-        print(f"🔍 DEBUG save_user_data:")
-        print(f"   user_id: {user_id_int}")
-        print(f"   schedule type: {type(schedule)}, value: {schedule}")
-        print(f"   deadlines type: {type(deadlines)}, value: {deadlines}")
-        
-        # 🔥 ПРОВЕРЯЕМ ТИПЫ ДАННЫХ
-        if not isinstance(schedule, list):
-            print(f"❌ ОШИБКА: schedule должен быть list, но получили {type(schedule)}")
+        conn = await get_db_connection()
+        if not conn:
             return False
             
-        if not isinstance(deadlines, list):
-            print(f"❌ ОШИБКА: deadlines должен быть list, но получили {type(deadlines)}")
+        # Пробуем вставить пользователя, игнорируем если уже существует
+        await conn.execute('''
+            INSERT INTO users (user_id, schedule, deadlines)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (user_id) DO NOTHING
+        ''', user_id, [], [])
+        
+        print(f"✅ Пользователь {user_id} гарантированно существует в БД")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Ошибка создания пользователя {user_id}: {e}")
+        return False
+        
+    finally:
+        if conn:
+            await conn.close()
+
+async def save_user_data(user_id: int, schedule: List[Dict], deadlines: List[Dict]) -> bool:
+    """Сохраняет данные пользователя в базу данных"""
+    conn = None
+    try:
+        # Сначала гарантируем, что пользователь существует
+        await create_user_if_not_exists(user_id)
+        
+        conn = await get_db_connection()
+        if not conn:
             return False
         
+        print(f"🔍 DEBUG save_user_data:")
+        print(f"   user_id: {user_id}")
+        print(f"   schedule: {schedule}")
+        print(f"   deadlines: {deadlines}")
+        
+        # Обновляем данные пользователя
         await conn.execute('''
             UPDATE users 
             SET schedule = $2, deadlines = $3
             WHERE user_id = $1
-        ''', user_id_int, schedule, deadlines)
+        ''', user_id, schedule, deadlines)
         
         print(f"✅ Данные пользователя {user_id} сохранены в БД")
         return True
@@ -111,26 +107,28 @@ async def save_user_data(user_id, schedule, deadlines):
         return False
         
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
 
-async def load_user_data(user_id):
+async def load_user_data(user_id: int) -> Dict[str, List]:
     """Загружает данные пользователя из базы данных"""
-    conn = await get_db_connection()
-    if not conn:
-        return {'schedule': [], 'deadlines': []}
-        
+    conn = None
     try:
-        user_id_int = int(user_id)
+        # Гарантируем, что пользователь существует
+        await create_user_if_not_exists(user_id)
+        
+        conn = await get_db_connection()
+        if not conn:
+            return {'schedule': [], 'deadlines': []}
         
         result = await conn.fetchrow(
             'SELECT schedule, deadlines FROM users WHERE user_id = $1', 
-            user_id_int
+            user_id
         )
         
         if result:
-            # asyncpg автоматически конвертирует JSONB в Python объекты
-            schedule = result['schedule'] or []
-            deadlines = result['deadlines'] or []
+            schedule = result['schedule'] if result['schedule'] else []
+            deadlines = result['deadlines'] if result['deadlines'] else []
             
             print(f"✅ Данные пользователя {user_id} загружены из БД")
             return {
@@ -138,7 +136,8 @@ async def load_user_data(user_id):
                 'deadlines': deadlines
             }
         else:
-            print(f"✅ Пользователь {user_id} не найден, возвращаем пустые данные")
+            # Это не должно происходить, так как мы создали пользователя выше
+            print(f"⚠️ Неожиданно: пользователь {user_id} не найден после create_user_if_not_exists")
             return {'schedule': [], 'deadlines': []}
             
     except Exception as e:
@@ -146,48 +145,5 @@ async def load_user_data(user_id):
         return {'schedule': [], 'deadlines': []}
         
     finally:
-        await conn.close()
-
-async def clear_user_data(user_id):
-    """Очищает данные пользователя (для отладки)"""
-    conn = await get_db_connection()
-    if not conn:
-        return False
-        
-    try:
-        user_id_int = int(user_id)
-        
-        await conn.execute(
-            'UPDATE users SET schedule = $1, deadlines = $2 WHERE user_id = $3',
-            [], [], user_id_int
-        )
-        
-        print(f"✅ Данные пользователя {user_id} очищены")
-        return True
-        
-    except Exception as e:
-        print(f"❌ Ошибка очистки данных пользователя {user_id}: {e}")
-        return False
-        
-    finally:
-        await conn.close()
-
-async def get_all_users():
-    """Получает список всех пользователей (для администрирования)"""
-    conn = await get_db_connection()
-    if not conn:
-        return []
-        
-    try:
-        rows = await conn.fetch('SELECT user_id FROM users')
-        user_ids = [row['user_id'] for row in rows]
-        
-        print(f"✅ Получен список пользователей: {len(user_ids)} пользователей")
-        return user_ids
-        
-    except Exception as e:
-        print(f"❌ Ошибка получения списка пользователей: {e}")
-        return []
-        
-    finally:
-        await conn.close()
+        if conn:
+            await conn.close()
