@@ -15,7 +15,7 @@ from telegram.ext import (
     filters,
     CallbackQueryHandler,
 )
-from database import init_database, save_user_data, load_user_data, get_db_connection
+from database import init_database, save_user_data, load_user_data, get_db_connection, create_user_if_not_exists
 
 app = Flask(__name__)
 
@@ -364,7 +364,7 @@ async def add_deadline_reminder(update: Update, context: ContextTypes.DEFAULT_TY
     try:
         reminder_minutes = int(update.message.text.strip())
         context.user_data['deadline_data']['reminderBefore'] = reminder_minutes
-        user_id = str(update.message.from_user.id)
+        user_id = update.message.from_user.id
         
         user_data = await load_user_data(user_id)
         user_data['deadlines'].append(context.user_data['deadline_data'])
@@ -399,7 +399,7 @@ async def get_deadlines(user_id):
 
 async def manage_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Показывает расписание пользователя."""
-    user_id = str(update.effective_user.id)
+    user_id = update.effective_user.id
     items = await get_schedule(user_id)
     
     logger.info(f"📊 Запрос расписания от пользователя {user_id}, элементов: {len(items)}")
@@ -461,7 +461,7 @@ async def manage_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def manage_deadlines(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Показывает дедлайны пользователя."""
-    user_id = str(update.effective_user.id)
+    user_id = update.effective_user.id
     items = await get_deadlines(user_id)
     
     logger.info(f"📊 Запрос дедлайнов от пользователя {user_id}, элементов: {len(items)}")
@@ -570,7 +570,7 @@ async def edit_schedule_day_callback(update: Update, context: ContextTypes.DEFAU
     await query.answer()
     
     selected_day = query.data.split('_')[2]
-    user_id = str(query.from_user.id)
+    user_id = query.from_user.id
     items = await get_schedule(user_id)
     
     day_items = [item for item in items if item['day'] == selected_day]
@@ -629,7 +629,7 @@ async def edit_schedule_field(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def update_schedule_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Обновляет значение пары."""
-    user_id = str(update.effective_user.id)
+    user_id = update.effective_user.id
     item_index = context.user_data['schedule_index']
     field = context.user_data['schedule_field']
     new_value = update.message.text.strip()
@@ -693,7 +693,7 @@ async def edit_deadline_field(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def update_deadline_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Обновляет значение дедлайна."""
-    user_id = str(update.effective_user.id)
+    user_id = update.effective_user.id
     item_index = context.user_data['deadline_index']
     field = context.user_data['deadline_field']
     new_value = update.message.text.strip()
@@ -740,7 +740,7 @@ async def delete_item_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.callback_query
     await query.answer()
     
-    user_id = str(query.from_user.id)
+    user_id = query.from_user.id
     parts = query.data.split('_')
     item_type = parts[1]
     item_index = int(parts[2])
@@ -770,7 +770,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def test_db(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Детальная проверка подключения к БД"""
     try:
-        user_id = str(update.effective_user.id)
+        user_id = update.effective_user.id
         await update.message.reply_text("🔍 Детальная проверка БД...")
         
         # Тест 1: Подключение к БД
@@ -845,7 +845,6 @@ async def reset_database(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def force_create_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Принудительно создает пользователя в БД"""
-    from database import create_user_if_not_exists
     user_id = update.effective_user.id
     
     success = await create_user_if_not_exists(user_id)
