@@ -1,6 +1,7 @@
 """
 Промежуточное ПО для обработки запросов
 """
+import asyncio  # <-- если еще нет
 import logging
 import time
 from typing import Callable, Dict, Any

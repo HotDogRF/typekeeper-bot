@@ -2,7 +2,7 @@
 Хранилище состояний пользователей с блокировками
 """
 import asyncio
-from typing import Dict, Any, Optional
+from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from database import Database
 
