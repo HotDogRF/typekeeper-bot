@@ -107,22 +107,23 @@ async def add_schedule_day_callback(update: Update, context: ContextTypes.DEFAUL
     query = update.callback_query
     await query.answer()
     
-    # Безопасно извлекаем день
-    parts = query.data.split('_')
-    if len(parts) < 2:
-        await query.edit_message_text("❌ Ошибка выбора дня")
-        return ConversationHandler.END
-    
-    day = parts[1]
+    day = query.data.split('_')[1]
     
     # Сохраняем день в данных
     context.user_data['schedule_data']['day'] = day
     
-    await query.edit_message_text(
-        f"📅 День: **{day.capitalize()}**\n\n"
-        f"🕐 Введите время начала и конца пары:\n"
-        f"Формат: **ЧЧ:ММ-ЧЧ:ММ**\n"
-        f"Пример: *14:30-16:00*",
+    # Удаляем старое сообщение с инлайн-клавиатурой
+    await query.delete_message()
+    
+    # Отправляем новое сообщение с reply-клавиатурой
+    await context.bot.send_message(
+        chat_id=query.message.chat_id,
+        text=(
+            f"📅 День: **{day.capitalize()}**\n\n"
+            f"🕐 Введите время начала и конца пары:\n"
+            f"Формат: **ЧЧ:ММ-ЧЧ:ММ**\n"
+            f"Пример: *14:30-16:00*"
+        ),
         parse_mode='Markdown',
         reply_markup=get_cancel_keyboard()
     )
