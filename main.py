@@ -1,6 +1,4 @@
-"""
-Главный файл бота - точка входа
-"""
+"""Главный файл бота - точка входа"""
 import os
 import logging
 import asyncio
@@ -20,8 +18,21 @@ from telegram.ext import (
 
 from database import Database
 from storage import user_storage
-import handlers
 from keyboards import get_main_keyboard
+
+# Импортируем состояния и обработчики из handlers
+from handlers import (
+    start, help_command, reset_command, cancel, error_handler,
+    show_schedule, show_deadlines,
+    start_add_schedule, add_schedule_day_callback, add_schedule_time,
+    add_schedule_class, add_schedule_professor, add_schedule_reminder,
+    start_add_deadline, add_deadline_name, add_deadline_date,
+    add_deadline_description, add_deadline_reminder,
+    ADD_SCHEDULE_DAY, ADD_SCHEDULE_TIME, ADD_SCHEDULE_CLASS,
+    ADD_SCHEDULE_PROFESSOR, ADD_SCHEDULE_REMINDER,
+    ADD_DEADLINE_NAME, ADD_DEADLINE_DATE, ADD_DEADLINE_DESC,
+    ADD_DEADLINE_REMINDER
+)
 
 # Настройка логирования
 logging.basicConfig(
@@ -233,9 +244,6 @@ async def startup(app):
     # Установка вебхука
     await set_webhook()
     
-    # Запуск фоновых задач (например, напоминаний)
-    # application.job_queue.run_repeating(...)
-    
     logger.info(f"✅ Бот запущен на порту {PORT}")
 
 async def shutdown(app):
@@ -251,6 +259,40 @@ async def shutdown(app):
     
     logger.info("✅ Бот остановлен")
 
+async def polling_mode():
+    """Режим polling для разработки"""
+    logger.info("🔄 Запуск в режиме polling...")
+    
+    # Инициализация БД
+    try:
+        await Database.init_database()
+        logger.info("✅ База данных инициализирована")
+    except Exception as e:
+        logger.error(f"❌ Ошибка инициализации БД: {e}")
+        return
+    
+    # Настройка обработчиков
+    setup_handlers()
+    
+    # Запуск бота
+    await application.initialize()
+    await application.start()
+    
+    # Начинаем polling
+    try:
+        await application.updater.start_polling()
+        logger.info("✅ Бот запущен в режиме polling")
+        
+        # Бесконечное ожидание
+        await asyncio.Event().wait()
+        
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("🛑 Получен сигнал остановки")
+    finally:
+        await application.stop()
+        await application.shutdown()
+        await Database.close_pool()
+
 def create_app():
     """Создание aiohttp приложения"""
     app = web.Application()
@@ -265,37 +307,6 @@ def create_app():
     app.on_shutdown.append(shutdown)
     
     return app
-
-async def polling_mode():
-    """Режим polling для разработки"""
-    logger.info("🔄 Запуск в режиме polling...")
-    
-    # Инициализация БД
-    await Database.init_database()
-    logger.info("✅ База данных инициализирована")
-    
-    # Настройка обработчиков
-    setup_handlers()
-    
-    # Запуск бота
-    await application.initialize()
-    await application.start()
-    
-    # Ожидание остановки
-    try:
-        await application.updater.start_polling()
-        logger.info("✅ Бот запущен в режиме polling")
-        
-        # Бесконечное ожидание
-        while True:
-            await asyncio.sleep(3600)
-            
-    except KeyboardInterrupt:
-        logger.info("🛑 Получен сигнал остановки")
-    finally:
-        await application.stop()
-        await application.shutdown()
-        await Database.close_pool()
 
 def main():
     """Главная функция"""

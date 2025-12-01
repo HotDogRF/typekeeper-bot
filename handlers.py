@@ -107,7 +107,13 @@ async def add_schedule_day_callback(update: Update, context: ContextTypes.DEFAUL
     query = update.callback_query
     await query.answer()
     
-    day = query.data.split('_')[1]
+    # Безопасно извлекаем день
+    parts = query.data.split('_')
+    if len(parts) < 2:
+        await query.edit_message_text("❌ Ошибка выбора дня")
+        return ConversationHandler.END
+    
+    day = parts[1]
     
     # Сохраняем день в данных
     context.user_data['schedule_data']['day'] = day
