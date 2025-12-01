@@ -244,28 +244,19 @@ async def add_schedule_reminder(update: Update, context: ContextTypes.DEFAULT_TY
     """Сохраняет напоминание и добавляет запись в БД."""
     user_id = update.effective_user.id
     
-    # 🔥 ДЕТАЛЬНАЯ ДИАГНОСТИКА ПЕРЕД НАЧАЛОМ
-    logger.info(f"🔍 ДИАГНОСТИКА add_schedule_reminder:")
-    logger.info(f"   user_id: {user_id}")
-    logger.info(f"   context.user_data: {context.user_data}")
-    logger.info(f"   message_text: {update.message.text}")
-    
+    # 🔥 УПРОЩЕННАЯ ВЕРСИЯ: только базовая проверка
+    if 'schedule_data' not in context.user_data:
+        await update.message.reply_text(
+            "❌ Сессия добавления расписания устарела. Начните заново.",
+            reply_markup=get_main_keyboard()
+        )
+        return ConversationHandler.END
+
     try:
         reminder_text = update.message.text.strip()
         
-        # 🔥 ПРОВЕРКА НА КОМАНДЫ МЕНЮ
-        menu_commands = ["Добавить расписание", "Добавить дедлайн", "Мое расписание", "Мои дедлайны"]
-        if reminder_text in menu_commands:
-            logger.info(f"❌ Пользователь прервал ввод командой меню: {reminder_text}")
-            await update.message.reply_text(
-                "❌ Добавление расписания прервано. Выберите действие заново.",
-                reply_markup=get_main_keyboard()
-            )
-            return ConversationHandler.END
-        
-        # Проверяем что это число
+        # 🔥 ПРОСТАЯ ПРОВЕРКА ЧТО ЭТО ЧИСЛО
         if not reminder_text.isdigit():
-            logger.warning(f"⚠️ Пользователь ввел не число: {reminder_text}")
             await update.message.reply_text(
                 "❌ Пожалуйста, введите числовое значение (например: 15):",
                 reply_markup=get_main_keyboard()
@@ -275,52 +266,16 @@ async def add_schedule_reminder(update: Update, context: ContextTypes.DEFAULT_TY
         reminder_minutes = int(reminder_text)
         context.user_data['schedule_data']['reminderBefore'] = reminder_minutes
         
-        # 🔥 ДЕТАЛЬНАЯ ДИАГНОСТИКА ДАННЫХ
-        logger.info(f"🔍 FINAL SCHEDULE DATA:")
-        logger.info(f"   Данные: {context.user_data['schedule_data']}")
-        logger.info(f"   Тип данных: {type(context.user_data['schedule_data'])}")
-        
-        # Проверяем что все обязательные поля есть
-        required_fields = ['day', 'time', 'className', 'professor', 'reminderBefore']
-        missing_fields = [field for field in required_fields if field not in context.user_data['schedule_data']]
-        
-        if missing_fields:
-            logger.error(f"❌ Отсутствуют обязательные поля: {missing_fields}")
-            await update.message.reply_text(
-                f"❌ Ошибка: отсутствуют данные ({', '.join(missing_fields)}). Начните заново.",
-                reply_markup=get_main_keyboard()
-            )
-            return ConversationHandler.END
-        
-        # Загружаем текущие данные
+        # 🔥 БАЗОВАЯ ЛОГИКА: загружаем данные, добавляем новую запись, сохраняем
         user_data = await load_user_data(user_id)
-        logger.info(f"🔍 USER DATA BEFORE ADDING:")
-        logger.info(f"   Текущее расписание: {user_data['schedule']}")
-        logger.info(f"   Тип расписания: {type(user_data['schedule'])}")
-        logger.info(f"   Количество элементов: {len(user_data['schedule'])}")
+        user_data['schedule'].append(context.user_data['schedule_data'])
         
-        # Добавляем новое расписание
-        new_schedule_item = context.user_data['schedule_data']
-
-        user_data['schedule'].append(new_schedule_item)
-        
-        logger.info(f"🔍 USER DATA AFTER ADDING:")
-        logger.info(f"   Обновленное расписание: {user_data['schedule']}")
-        logger.info(f"   Количество элементов: {len(user_data['schedule'])}")
-        
-        # 🔥 СОХРАНЯЕМ ДАННЫЕ
-        logger.info("💾 Начинаем сохранение данных в БД...")
+        # 🔥 ПРОСТОЕ СОХРАНЕНИЕ БЕЗ ЛИШНИХ ПРОВЕРОК
         success = await save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
         
         if success:
-            # 🔥 ОЧИЩАЕМ КОНТЕКСТ ПЕРЕД ЗАВЕРШЕНИЕМ
+            # 🔥 ОЧИЩАЕМ КОНТЕКСТ И ОТПРАВЛЯЕМ УСПЕШНОЕ СООБЩЕНИЕ
             context.user_data.pop('schedule_data', None)
-            
-            # Проверяем что сохранилось
-            verify_data = await load_user_data(user_id)
-            logger.info(f"🔍 ПРОВЕРКА ПОСЛЕ СОХРАНЕНИЯ:")
-            logger.info(f"   Расписание в БД: {verify_data['schedule']}")
-            logger.info(f"   Количество элементов: {len(verify_data['schedule'])}")
             
             await update.message.reply_text(
                 "✅ Расписание успешно добавлено!",
@@ -330,26 +285,23 @@ async def add_schedule_reminder(update: Update, context: ContextTypes.DEFAULT_TY
             logger.info(f"✅ Расписание добавлено для пользователя {user_id}")
             return ConversationHandler.END
         else:
-            logger.error("❌ Ошибка при вызове save_user_data")
             await update.message.reply_text(
                 "❌ Ошибка при сохранении в базу данных. Попробуйте еще раз.",
                 reply_markup=get_main_keyboard()
             )
             return ADD_SCHEDULE_REMINDER
         
-    except ValueError as ve:
-        logger.error(f"❌ ValueError в add_schedule_reminder: {ve}")
+    except ValueError:
         await update.message.reply_text(
             "❌ Пожалуйста, введите числовое значение (например: 15):",
             reply_markup=get_main_keyboard()
         )
         return ADD_SCHEDULE_REMINDER
     except Exception as e:
-        logger.error(f"❌ Критическая ошибка в add_schedule_reminder: {e}")
-        import traceback
-        logger.error(f"📋 Трассировка: {traceback.format_exc()}")
+        # 🔥 УПРОЩЕННАЯ ОБРАБОТКА ОШИБОК
+        logger.error(f"❌ Ошибка в add_schedule_reminder: {e}")
         await update.message.reply_text(
-            "❌ Произошла непредвиденная ошибка. Попробуйте еще раз.",
+            "❌ Произошла ошибка. Попробуйте еще раз.",
             reply_markup=get_main_keyboard()
         )
         return ADD_SCHEDULE_REMINDER
