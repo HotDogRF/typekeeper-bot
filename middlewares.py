@@ -1,7 +1,7 @@
 """
 Промежуточное ПО для обработки запросов
 """
-import asyncio  # <-- если еще нет
+import asyncio
 import logging
 import time
 from typing import Callable, Dict, Any
@@ -54,15 +54,30 @@ class StateManagementMiddleware:
     ):
         user_id = update.effective_user.id
         
-        # Загружаем состояние пользователя в context
+        # Загружаем состояние пользователя
         user_data = await user_storage.get_user_data(user_id)
         
-        # Сохраняем в context для совместимости со старым кодом
-        context.user_data = {
+        # 🔥 ИСПРАВЛЕНИЕ: не присваиваем новый объект, а обновляем существующий
+        if context.user_data is None:
+            context.user_data = {}
+        
+        # Сохраняем старые данные если есть
+        old_user_data = context.user_data.copy() if context.user_data else {}
+        
+        # Очищаем и обновляем
+        context.user_data.clear()
+        context.user_data.update({
             'schedule': user_data['schedule'],
             'deadlines': user_data['deadlines'],
-            'state': user_data['state']
-        }
+            'state': user_data['state'],
+            # Сохраняем старые временные данные если есть
+            'schedule_data': old_user_data.get('schedule_data'),
+            'deadline_data': old_user_data.get('deadline_data'),
+            'schedule_index': old_user_data.get('schedule_index'),
+            'deadline_index': old_user_data.get('deadline_index'),
+            'schedule_field': old_user_data.get('schedule_field'),
+            'deadline_field': old_user_data.get('deadline_field')
+        })
         
         try:
             # Вызываем обработчик

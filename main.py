@@ -48,14 +48,14 @@ def setup_handlers():
     """Настройка всех обработчиков"""
     
     # Основные команды
-    application.add_handler(CommandHandler("start", handlers.start))
-    application.add_handler(CommandHandler("help", handlers.help_command))
-    application.add_handler(CommandHandler("reset", handlers.reset_command))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("reset", reset_command))
     
     # Обработчик кнопки отмены
     application.add_handler(MessageHandler(
         filters.Regex("^❌ Отменить$"),
-        handlers.handle_cancel_button
+        cancel
     ))
     
     # Добавление расписания
@@ -63,48 +63,48 @@ def setup_handlers():
         entry_points=[
             MessageHandler(
                 filters.Regex("^📅 Добавить расписание$"),
-                handlers.start_add_schedule
+                start_add_schedule
             )
         ],
         states={
-            handlers.ADD_SCHEDULE_DAY: [
+            ADD_SCHEDULE_DAY: [
                 CallbackQueryHandler(
-                    handlers.add_schedule_day_callback,
+                    add_schedule_day_callback,
                     pattern="^day_"
                 ),
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND,
-                    handlers.cancel  # Если ввели текст вместо кнопки
+                    cancel  # Если ввели текст вместо кнопки
                 )
             ],
-            handlers.ADD_SCHEDULE_TIME: [
+            ADD_SCHEDULE_TIME: [
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND,
-                    handlers.add_schedule_time
+                    add_schedule_time
                 )
             ],
-            handlers.ADD_SCHEDULE_CLASS: [
+            ADD_SCHEDULE_CLASS: [
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND,
-                    handlers.add_schedule_class
+                    add_schedule_class
                 )
             ],
-            handlers.ADD_SCHEDULE_PROFESSOR: [
+            ADD_SCHEDULE_PROFESSOR: [
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND,
-                    handlers.add_schedule_professor
+                    add_schedule_professor
                 )
             ],
-            handlers.ADD_SCHEDULE_REMINDER: [
+            ADD_SCHEDULE_REMINDER: [
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND,
-                    handlers.add_schedule_reminder
+                    add_schedule_reminder
                 )
             ],
         },
         fallbacks=[
-            CommandHandler("cancel", handlers.cancel),
-            MessageHandler(filters.Regex("^❌ Отменить$"), handlers.cancel)
+            CommandHandler("cancel", cancel),
+            MessageHandler(filters.Regex("^❌ Отменить$"), cancel)
         ],
     )
     
@@ -113,67 +113,61 @@ def setup_handlers():
         entry_points=[
             MessageHandler(
                 filters.Regex("^⏰ Добавить дедлайн$"),
-                handlers.start_add_deadline
+                start_add_deadline
             )
         ],
         states={
-            handlers.ADD_DEADLINE_NAME: [
+            ADD_DEADLINE_NAME: [
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND,
-                    handlers.add_deadline_name
+                    add_deadline_name
                 )
             ],
-            handlers.ADD_DEADLINE_DATE: [
+            ADD_DEADLINE_DATE: [
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND,
-                    handlers.add_deadline_date
+                    add_deadline_date
                 )
             ],
-            handlers.ADD_DEADLINE_DESC: [
+            ADD_DEADLINE_DESC: [
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND,
-                    handlers.add_deadline_description
+                    add_deadline_description
                 )
             ],
-            handlers.ADD_DEADLINE_REMINDER: [
+            ADD_DEADLINE_REMINDER: [
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND,
-                    handlers.add_deadline_reminder
+                    add_deadline_reminder
                 )
             ],
         },
         fallbacks=[
-            CommandHandler("cancel", handlers.cancel),
-            MessageHandler(filters.Regex("^❌ Отменить$"), handlers.cancel)
+            CommandHandler("cancel", cancel),
+            MessageHandler(filters.Regex("^❌ Отменить$"), cancel)
         ],
     )
     
     # Показ расписания и дедлайнов
     application.add_handler(MessageHandler(
         filters.Regex("^📋 Мое расписание$"),
-        handlers.show_schedule
+        show_schedule
     ))
     
     application.add_handler(MessageHandler(
         filters.Regex("^📝 Мои дедлайны$"),
-        handlers.show_deadlines
-    ))
-    
-    # Обработка callback запросов для просмотра дней
-    application.add_handler(CallbackQueryHandler(
-        handlers.show_schedule,  # Заглушка, можно расширить
-        pattern="^view_day_"
+        show_deadlines
     ))
     
     # Команды помощи и сброса
     application.add_handler(MessageHandler(
         filters.Regex("^🔄 Сбросить состояние$"),
-        handlers.reset_command
+        reset_command
     ))
     
     application.add_handler(MessageHandler(
         filters.Regex("^ℹ️ Помощь$"),
-        handlers.help_command
+        help_command
     ))
     
     # Регистрируем ConversationHandler
@@ -181,7 +175,7 @@ def setup_handlers():
     application.add_handler(conv_handler_deadline)
     
     # Глобальный обработчик ошибок
-    application.add_error_handler(handlers.error_handler)
+    application.add_error_handler(error_handler)
 
 async def set_webhook():
     """Установка вебхука"""

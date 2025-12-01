@@ -3,10 +3,10 @@
 """
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, List
 
-from telegram import Update, InlineKeyboardMarkup
+from telegram import Update
 from telegram.ext import (
     ContextTypes,
     ConversationHandler,
@@ -19,13 +19,10 @@ from telegram.ext import (
 from keyboards import (
     get_main_keyboard, 
     get_weekday_keyboard,
-    get_edit_schedule_keyboard,
-    get_edit_deadline_keyboard,
     get_cancel_keyboard,
     WEEKDAYS
 )
 from storage import user_storage
-from middlewares import apply_middlewares
 
 logger = logging.getLogger(__name__)
 
@@ -39,18 +36,13 @@ logger = logging.getLogger(__name__)
     ADD_DEADLINE_NAME,
     ADD_DEADLINE_DATE,
     ADD_DEADLINE_DESC,
-    ADD_DEADLINE_REMINDER,
-    EDIT_SCHEDULE_FIELD,
-    EDIT_DEADLINE_FIELD
-) = range(11)
+    ADD_DEADLINE_REMINDER
+) = range(9)
 
-# ==================== ОСНОВНЫЕ КОМАНДЫ ====================
+# ==================== УПРОЩЕННЫЕ ОБРАБОТЧИКИ ====================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /start"""
-    await apply_middlewares(update, context, _start)
-
-async def _start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
     # Создаем пользователя если нет
@@ -65,9 +57,6 @@ async def _start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /help"""
-    await apply_middlewares(update, context, _help_command)
-
-async def _help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = """
 📚 **Доступные команды:**
 
@@ -81,7 +70,6 @@ async def _help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /start - Перезапустить бота
 /help - Показать это сообщение
 /reset - Сбросить все данные
-/debug - Отладочная информация
 
 **Форматы данных:**
 - День недели: понедельник, вторник и т.д.
@@ -92,9 +80,6 @@ async def _help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Сброс всех данных пользователя"""
-    await apply_middlewares(update, context, _reset_command)
-
-async def _reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     await user_storage.update_user_data(user_id, schedule=[], deadlines=[])
     await user_storage.clear_user_state(user_id)
@@ -106,17 +91,10 @@ async def _reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ==================== ДОБАВЛЕНИЕ РАСПИСАНИЯ ====================
 
-async def start_add_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start_add_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Начало добавления расписания"""
-    await apply_middlewares(update, context, _start_add_schedule)
-
-async def _start_add_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Сохраняем начальное состояние
-    await user_storage.update_user_state(
-        update.effective_user.id,
-        action="add_schedule",
-        step="day"
-    )
+    # Инициализируем данные
+    context.user_data['schedule_data'] = {}
     
     await update.message.reply_text(
         "📅 Выберите день недели для пары:",
@@ -124,37 +102,28 @@ async def _start_add_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
     return ADD_SCHEDULE_DAY
 
-async def add_schedule_day_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_schedule_day_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Обработка выбора дня через callback"""
-    await apply_middlewares(update, context, _add_schedule_day_callback)
-
-async def _add_schedule_day_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    user_id = query.from_user.id
     day = query.data.split('_')[1]
     
-    # Сохраняем день в состоянии
-    await user_storage.update_user_state(
-        user_id,
-        schedule_day=day
-    )
+    # Сохраняем день в данных
+    context.user_data['schedule_data']['day'] = day
     
     await query.edit_message_text(
         f"📅 День: **{day.capitalize()}**\n\n"
         f"🕐 Введите время начала и конца пары:\n"
         f"Формат: **ЧЧ:ММ-ЧЧ:ММ**\n"
         f"Пример: *14:30-16:00*",
-        parse_mode='Markdown'
+        parse_mode='Markdown',
+        reply_markup=get_cancel_keyboard()
     )
     return ADD_SCHEDULE_TIME
 
-async def add_schedule_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_schedule_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Ввод времени пары"""
-    await apply_middlewares(update, context, _add_schedule_time)
-
-async def _add_schedule_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     time_input = update.message.text.strip()
     
     # Проверяем формат
@@ -168,11 +137,7 @@ async def _add_schedule_time(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return ADD_SCHEDULE_TIME
     
-    user_id = update.effective_user.id
-    await user_storage.update_user_state(
-        user_id,
-        schedule_time=time_input
-    )
+    context.user_data['schedule_data']['time'] = time_input
     
     await update.message.reply_text(
         "📚 Введите название предмета:",
@@ -180,18 +145,10 @@ async def _add_schedule_time(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
     return ADD_SCHEDULE_CLASS
 
-async def add_schedule_class(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_schedule_class(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Ввод названия предмета"""
-    await apply_middlewares(update, context, _add_schedule_class)
-
-async def _add_schedule_class(update: Update, context: ContextTypes.DEFAULT_TYPE):
     class_name = update.message.text.strip()
-    user_id = update.effective_user.id
-    
-    await user_storage.update_user_state(
-        user_id,
-        schedule_class=class_name
-    )
+    context.user_data['schedule_data']['className'] = class_name
     
     await update.message.reply_text(
         "👨‍🏫 Введите имя преподавателя:",
@@ -199,18 +156,10 @@ async def _add_schedule_class(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
     return ADD_SCHEDULE_PROFESSOR
 
-async def add_schedule_professor(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_schedule_professor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Ввод имени преподавателя"""
-    await apply_middlewares(update, context, _add_schedule_professor)
-
-async def _add_schedule_professor(update: Update, context: ContextTypes.DEFAULT_TYPE):
     professor = update.message.text.strip()
-    user_id = update.effective_user.id
-    
-    await user_storage.update_user_state(
-        user_id,
-        schedule_professor=professor
-    )
+    context.user_data['schedule_data']['professor'] = professor
     
     await update.message.reply_text(
         "⏰ За сколько минут до начала пары напомнить?\n"
@@ -219,34 +168,20 @@ async def _add_schedule_professor(update: Update, context: ContextTypes.DEFAULT_
     )
     return ADD_SCHEDULE_REMINDER
 
-async def add_schedule_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_schedule_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Ввод времени напоминания и сохранение"""
-    await apply_middlewares(update, context, _add_schedule_reminder)
-
-async def _add_schedule_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
     try:
         reminder = int(update.message.text.strip())
-        
-        # Получаем все сохраненные данные
-        state = await user_storage.get_user_state(user_id)
-        
-        # Создаем новую запись
-        new_item = {
-            'day': state.get('schedule_day'),
-            'time': state.get('schedule_time'),
-            'className': state.get('schedule_class'),
-            'professor': state.get('schedule_professor'),
-            'reminderBefore': reminder
-        }
+        context.user_data['schedule_data']['reminderBefore'] = reminder
         
         # Загружаем текущее расписание
         user_data = await user_storage.get_user_data(user_id)
         schedule = user_data['schedule']
         
         # Добавляем новую запись
-        schedule.append(new_item)
+        schedule.append(context.user_data['schedule_data'])
         
         # Сохраняем
         await user_storage.update_user_data(
@@ -254,14 +189,8 @@ async def _add_schedule_reminder(update: Update, context: ContextTypes.DEFAULT_T
             schedule=schedule
         )
         
-        # Очищаем состояние
-        await user_storage.update_user_state(
-            user_id,
-            schedule_day=None,
-            schedule_time=None,
-            schedule_class=None,
-            schedule_professor=None
-        )
+        # Очищаем временные данные
+        context.user_data.pop('schedule_data', None)
         
         await update.message.reply_text(
             "✅ Пара успешно добавлена в расписание!",
@@ -279,16 +208,9 @@ async def _add_schedule_reminder(update: Update, context: ContextTypes.DEFAULT_T
 
 # ==================== ДОБАВЛЕНИЕ ДЕДЛАЙНА ====================
 
-async def start_add_deadline(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start_add_deadline(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Начало добавления дедлайна"""
-    await apply_middlewares(update, context, _start_add_deadline)
-
-async def _start_add_deadline(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await user_storage.update_user_state(
-        update.effective_user.id,
-        action="add_deadline",
-        step="name"
-    )
+    context.user_data['deadline_data'] = {}
     
     await update.message.reply_text(
         "📝 Введите название дедлайна:",
@@ -296,18 +218,10 @@ async def _start_add_deadline(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
     return ADD_DEADLINE_NAME
 
-async def add_deadline_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_deadline_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Ввод названия дедлайна"""
-    await apply_middlewares(update, context, _add_deadline_name)
-
-async def _add_deadline_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = update.message.text.strip()
-    user_id = update.effective_user.id
-    
-    await user_storage.update_user_state(
-        user_id,
-        deadline_name=name
-    )
+    context.user_data['deadline_data']['name'] = name
     
     await update.message.reply_text(
         "📅 Введите дату и время дедлайна:\n"
@@ -318,22 +232,14 @@ async def _add_deadline_name(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
     return ADD_DEADLINE_DATE
 
-async def add_deadline_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_deadline_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Ввод даты дедлайна"""
-    await apply_middlewares(update, context, _add_deadline_date)
-
-async def _add_deadline_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
     date_input = update.message.text.strip()
-    user_id = update.effective_user.id
     
     try:
         # Проверяем формат
         datetime.strptime(date_input, "%Y-%m-%d %H:%M")
-        
-        await user_storage.update_user_state(
-            user_id,
-            deadline_date=date_input
-        )
+        context.user_data['deadline_data']['datetime'] = date_input
         
         await update.message.reply_text(
             "📄 Введите описание дедлайна (необязательно):\n"
@@ -352,20 +258,13 @@ async def _add_deadline_date(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return ADD_DEADLINE_DATE
 
-async def add_deadline_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_deadline_description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Ввод описания дедлайна"""
-    await apply_middlewares(update, context, _add_deadline_description)
-
-async def _add_deadline_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
     description = update.message.text.strip()
     if description == '-':
         description = ""
     
-    user_id = update.effective_user.id
-    await user_storage.update_user_state(
-        user_id,
-        deadline_description=description
-    )
+    context.user_data['deadline_data']['description'] = description
     
     await update.message.reply_text(
         "⏰ За сколько минут до дедлайна напомнить?\n"
@@ -374,33 +273,20 @@ async def _add_deadline_description(update: Update, context: ContextTypes.DEFAUL
     )
     return ADD_DEADLINE_REMINDER
 
-async def add_deadline_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_deadline_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Ввод напоминания и сохранение дедлайна"""
-    await apply_middlewares(update, context, _add_deadline_reminder)
-
-async def _add_deadline_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
     try:
         reminder = int(update.message.text.strip())
-        
-        # Получаем все сохраненные данные
-        state = await user_storage.get_user_state(user_id)
-        
-        # Создаем новую запись
-        new_item = {
-            'name': state.get('deadline_name'),
-            'datetime': state.get('deadline_date'),
-            'description': state.get('deadline_description', ''),
-            'reminderBefore': reminder
-        }
+        context.user_data['deadline_data']['reminderBefore'] = reminder
         
         # Загружаем текущие дедлайны
         user_data = await user_storage.get_user_data(user_id)
         deadlines = user_data['deadlines']
         
         # Добавляем новую запись
-        deadlines.append(new_item)
+        deadlines.append(context.user_data['deadline_data'])
         
         # Сохраняем
         await user_storage.update_user_data(
@@ -408,13 +294,8 @@ async def _add_deadline_reminder(update: Update, context: ContextTypes.DEFAULT_T
             deadlines=deadlines
         )
         
-        # Очищаем состояние
-        await user_storage.update_user_state(
-            user_id,
-            deadline_name=None,
-            deadline_date=None,
-            deadline_description=None
-        )
+        # Очищаем временные данные
+        context.user_data.pop('deadline_data', None)
         
         await update.message.reply_text(
             "✅ Дедлайн успешно добавлен!",
@@ -434,9 +315,6 @@ async def _add_deadline_reminder(update: Update, context: ContextTypes.DEFAULT_T
 
 async def show_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показ расписания пользователя"""
-    await apply_middlewares(update, context, _show_schedule)
-
-async def _show_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_data = await user_storage.get_user_data(user_id)
     schedule = user_data['schedule']
@@ -478,16 +356,13 @@ async def _show_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         message,
         parse_mode='Markdown',
-        reply_markup=get_weekday_keyboard(prefix="view_day_")
+        reply_markup=get_main_keyboard()
     )
 
 # ==================== ПОКАЗ ДЕДЛАЙНОВ ====================
 
 async def show_deadlines(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показ дедлайнов пользователя"""
-    await apply_middlewares(update, context, _show_deadlines)
-
-async def _show_deadlines(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_data = await user_storage.get_user_data(user_id)
     deadlines = user_data['deadlines']
@@ -542,15 +417,11 @@ async def _show_deadlines(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ==================== ОБЩИЕ ФУНКЦИИ ====================
 
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Отмена текущего действия"""
-    await apply_middlewares(update, context, _cancel)
-
-async def _cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    
-    # Очищаем состояние пользователя
-    await user_storage.clear_user_state(user_id)
+    # Очищаем временные данные
+    context.user_data.pop('schedule_data', None)
+    context.user_data.pop('deadline_data', None)
     
     await update.message.reply_text(
         "❌ Действие отменено.",
@@ -560,9 +431,6 @@ async def _cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_cancel_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка нажатия кнопки отмены"""
-    await apply_middlewares(update, context, _handle_cancel_button)
-
-async def _handle_cancel_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Проверяем, является ли сообщение кнопкой отмены
     if update.message.text == "❌ Отменить":
         return await cancel(update, context)
@@ -582,7 +450,3 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         except:
             pass
-    
-    # Очищаем состояние пользователя при ошибке
-    if update and update.effective_user:
-        await user_storage.clear_user_state(update.effective_user.id)
