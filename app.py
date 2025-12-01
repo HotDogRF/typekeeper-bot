@@ -244,16 +244,13 @@ async def add_schedule_reminder(update: Update, context: ContextTypes.DEFAULT_TY
     """Сохраняет напоминание и добавляет запись в БД."""
     user_id = update.effective_user.id
     
-    # 🔥 ЛОГИРУЕМ НАЧАЛО
     logger.info(f"🔄 add_schedule_reminder для пользователя {user_id}")
     
-    # 🔥 УБИРАЕМ ИЗБЫТОЧНУЮ ПРОВЕРКУ - если schedule_data нет, это критическая ошибка
-    # которую мы обработаем в общем блоке исключений
-
+    # 🔥 УПРОЩЕННАЯ ВЕРСИЯ
     try:
         reminder_text = update.message.text.strip()
         
-        # 🔥 ПРОВЕРКА НА КОМАНДЫ МЕНЮ
+        # ПРОВЕРКА НА КОМАНДЫ МЕНЮ
         menu_commands = ["Добавить расписание", "Добавить дедлайн", "Мое расписание", "Мои дедлайны"]
         if reminder_text in menu_commands:
             logger.info(f"❌ Пользователь прервал ввод командой меню: {reminder_text}")
@@ -265,27 +262,14 @@ async def add_schedule_reminder(update: Update, context: ContextTypes.DEFAULT_TY
         
         # Проверяем что это число
         if not reminder_text.isdigit():
-            logger.warning(f"⚠️ Пользователь ввел не число: {reminder_text}")
             await update.message.reply_text(
                 "❌ Пожалуйста, введите числовое значение (например: 15):",
                 reply_markup=get_main_keyboard()
             )
             return ADD_SCHEDULE_REMINDER
         
-        # 🔥 ДОБАВЛЯЕМ ПРОВЕРКУ schedule_data ЗДЕСЬ
-        if 'schedule_data' not in context.user_data:
-            logger.error("🚨 КРИТИЧЕСКАЯ ОШИБКА: schedule_data отсутствует на этапе reminder")
-            await update.message.reply_text(
-                "❌ Произошла критическая ошибка данных. Пожалуйста, начните добавление расписания заново.",
-                reply_markup=get_main_keyboard()
-            )
-            return ConversationHandler.END
-        
-        reminder_minutes = int(reminder_text)
-        context.user_data['schedule_data']['reminderBefore'] = reminder_minutes
-        
-        # 🔥 ЛОГИРУЕМ ФИНАЛЬНЫЕ ДАННЫЕ
-        logger.info(f"✅ Final schedule data: {context.user_data['schedule_data']}")
+        # Добавляем напоминание в данные
+        context.user_data['schedule_data']['reminderBefore'] = int(reminder_text)
         
         # Загружаем текущие данные
         user_data = await load_user_data(user_id)
@@ -299,7 +283,7 @@ async def add_schedule_reminder(update: Update, context: ContextTypes.DEFAULT_TY
         success = await save_user_data(user_id, user_data['schedule'], user_data['deadlines'])
         
         if success:
-            # 🔥 ОЧИЩАЕМ КОНТЕКСТ ПЕРЕД ЗАВЕРШЕНИЕМ
+            # Очищаем контекст
             context.user_data.pop('schedule_data', None)
             
             logger.info(f"✅ Расписание успешно добавлено для пользователя {user_id}")
@@ -308,6 +292,7 @@ async def add_schedule_reminder(update: Update, context: ContextTypes.DEFAULT_TY
                 reply_markup=get_main_keyboard()
             )
             
+            logger.info(f"✅ Расписание добавлено для пользователя {user_id}")
             return ConversationHandler.END
         else:
             logger.error("❌ save_user_data вернул значение False")
@@ -325,17 +310,8 @@ async def add_schedule_reminder(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return ADD_SCHEDULE_REMINDER
     except Exception as e:
-        # 🔥 ГЛОБАЛЬНАЯ ОБРАБОТКА ОШИБОК
-        logger.error(f"🚨 Непредвиденная ошибка в add_schedule_reminder: {e}")
-        logger.error(f"📋 Тип ошибки: {type(e).__name__}")
-        
-        # Очищаем контекст при любой ошибке
-        context.user_data.pop('schedule_data', None)
-        
-        await update.message.reply_text(
-            "❌ Произошла непредвиденная ошибка. Попробуйте добавить расписание заново.",
-            reply_markup=get_main_keyboard()
-        )
+        # 🔥 ПРОСТАЯ ОБРАБОТКА ОШИБОК БЕЗ ЛИШНИХ ДЕЙСТВИЙ
+        logger.error(f"❌ Ошибка при добавлении расписания: {e}")
         return ConversationHandler.END
 
 # ==================== ДИАЛОГ ДОБАВЛЕНИЯ ДЕДЛАЙНА ====================
@@ -351,7 +327,13 @@ async def start_add_deadline(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def add_deadline_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Сохраняет название дедлайна и запрашивает дату и время."""
+    logger.info(f"🔍 add_deadline_name вызвана для пользователя {update.effective_user.id}")
+    logger.info(f"📝 Введенный текст: {update.message.text}")
+    
     context.user_data['deadline_data']['name'] = update.message.text.strip()
+    
+    logger.info(f"✅ Имя дедлайна сохранено: {context.user_data['deadline_data']['name']}")
+    
     await update.message.reply_text(
         "📅 Введите дату и время дедлайна в формате:\n"
         "<b>ГГГГ-ММ-ДД ЧЧ:ММ</b>\n"
