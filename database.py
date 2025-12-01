@@ -29,7 +29,6 @@ async def init_database():
             return False
             
         # Создаем таблицу если не существует
-        await conn.execute('''DROP TABLE IF EXISTS users''')
         await conn.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 user_id BIGINT PRIMARY KEY,

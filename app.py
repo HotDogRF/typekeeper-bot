@@ -250,15 +250,6 @@ async def add_schedule_reminder(update: Update, context: ContextTypes.DEFAULT_TY
     logger.info(f"   context.user_data: {context.user_data}")
     logger.info(f"   message_text: {update.message.text}")
     
-    # 🔥 ПРЕРЫВАЕМ ЕСЛИ ДАННЫХ НЕТ
-    if 'schedule_data' not in context.user_data:
-        logger.error("❌ schedule_data отсутствует в context.user_data")
-        await update.message.reply_text(
-            "❌ Сессия добавления расписания устарела. Начните заново.",
-            reply_markup=get_main_keyboard()
-        )
-        return ConversationHandler.END
-
     try:
         reminder_text = update.message.text.strip()
         
@@ -310,7 +301,7 @@ async def add_schedule_reminder(update: Update, context: ContextTypes.DEFAULT_TY
         
         # Добавляем новое расписание
         new_schedule_item = context.user_data['schedule_data']
-        
+
         user_data['schedule'].append(new_schedule_item)
         
         logger.info(f"🔍 USER DATA AFTER ADDING:")
