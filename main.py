@@ -1,0 +1,318 @@
+"""
+Главный файл бота - точка входа
+"""
+import os
+import logging
+import asyncio
+from datetime import datetime
+
+import aiohttp
+from aiohttp import web
+from telegram import Update
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ConversationHandler,
+    filters
+)
+
+from database import Database
+from storage import user_storage
+import handlers
+from keyboards import get_main_keyboard
+
+# Настройка логирования
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# Конфигурация
+TOKEN = os.environ.get('BOT_TOKEN')
+if not TOKEN:
+    raise ValueError("BOT_TOKEN не установлен")
+
+PORT = int(os.environ.get('PORT', 8080))
+WEBHOOK_URL = os.environ.get('RAILWAY_STATIC_URL', '')
+
+if WEBHOOK_URL and not WEBHOOK_URL.startswith('https://'):
+    WEBHOOK_URL = f"https://{WEBHOOK_URL}"
+
+# Создаем application
+application = Application.builder().token(TOKEN).build()
+
+def setup_handlers():
+    """Настройка всех обработчиков"""
+    
+    # Основные команды
+    application.add_handler(CommandHandler("start", handlers.start))
+    application.add_handler(CommandHandler("help", handlers.help_command))
+    application.add_handler(CommandHandler("reset", handlers.reset_command))
+    
+    # Обработчик кнопки отмены
+    application.add_handler(MessageHandler(
+        filters.Regex("^❌ Отменить$"),
+        handlers.handle_cancel_button
+    ))
+    
+    # Добавление расписания
+    conv_handler_schedule = ConversationHandler(
+        entry_points=[
+            MessageHandler(
+                filters.Regex("^📅 Добавить расписание$"),
+                handlers.start_add_schedule
+            )
+        ],
+        states={
+            handlers.ADD_SCHEDULE_DAY: [
+                CallbackQueryHandler(
+                    handlers.add_schedule_day_callback,
+                    pattern="^day_"
+                ),
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    handlers.cancel  # Если ввели текст вместо кнопки
+                )
+            ],
+            handlers.ADD_SCHEDULE_TIME: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    handlers.add_schedule_time
+                )
+            ],
+            handlers.ADD_SCHEDULE_CLASS: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    handlers.add_schedule_class
+                )
+            ],
+            handlers.ADD_SCHEDULE_PROFESSOR: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    handlers.add_schedule_professor
+                )
+            ],
+            handlers.ADD_SCHEDULE_REMINDER: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    handlers.add_schedule_reminder
+                )
+            ],
+        },
+        fallbacks=[
+            CommandHandler("cancel", handlers.cancel),
+            MessageHandler(filters.Regex("^❌ Отменить$"), handlers.cancel)
+        ],
+    )
+    
+    # Добавление дедлайна
+    conv_handler_deadline = ConversationHandler(
+        entry_points=[
+            MessageHandler(
+                filters.Regex("^⏰ Добавить дедлайн$"),
+                handlers.start_add_deadline
+            )
+        ],
+        states={
+            handlers.ADD_DEADLINE_NAME: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    handlers.add_deadline_name
+                )
+            ],
+            handlers.ADD_DEADLINE_DATE: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    handlers.add_deadline_date
+                )
+            ],
+            handlers.ADD_DEADLINE_DESC: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    handlers.add_deadline_description
+                )
+            ],
+            handlers.ADD_DEADLINE_REMINDER: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    handlers.add_deadline_reminder
+                )
+            ],
+        },
+        fallbacks=[
+            CommandHandler("cancel", handlers.cancel),
+            MessageHandler(filters.Regex("^❌ Отменить$"), handlers.cancel)
+        ],
+    )
+    
+    # Показ расписания и дедлайнов
+    application.add_handler(MessageHandler(
+        filters.Regex("^📋 Мое расписание$"),
+        handlers.show_schedule
+    ))
+    
+    application.add_handler(MessageHandler(
+        filters.Regex("^📝 Мои дедлайны$"),
+        handlers.show_deadlines
+    ))
+    
+    # Обработка callback запросов для просмотра дней
+    application.add_handler(CallbackQueryHandler(
+        handlers.show_schedule,  # Заглушка, можно расширить
+        pattern="^view_day_"
+    ))
+    
+    # Команды помощи и сброса
+    application.add_handler(MessageHandler(
+        filters.Regex("^🔄 Сбросить состояние$"),
+        handlers.reset_command
+    ))
+    
+    application.add_handler(MessageHandler(
+        filters.Regex("^ℹ️ Помощь$"),
+        handlers.help_command
+    ))
+    
+    # Регистрируем ConversationHandler
+    application.add_handler(conv_handler_schedule)
+    application.add_handler(conv_handler_deadline)
+    
+    # Глобальный обработчик ошибок
+    application.add_error_handler(handlers.error_handler)
+
+async def set_webhook():
+    """Установка вебхука"""
+    if WEBHOOK_URL:
+        webhook_url = f"{WEBHOOK_URL}/webhook"
+        await application.bot.delete_webhook()
+        await application.bot.set_webhook(webhook_url)
+        logger.info(f"🌐 Вебхук установлен: {webhook_url}")
+    else:
+        logger.warning("⚠️ WEBHOOK_URL не установлен, бот будет работать в polling режиме")
+
+async def health_check(request):
+    """Проверка здоровья сервера"""
+    return web.Response(text="✅ Бот работает")
+
+async def handle_webhook(request):
+    """Обработка входящих вебхуков"""
+    try:
+        # Парсим обновление
+        data = await request.json()
+        update = Update.de_json(data, application.bot)
+        
+        # Логируем входящий запрос
+        if update.message:
+            logger.info(f"📨 Сообщение от {update.effective_user.id}: {update.message.text}")
+        elif update.callback_query:
+            logger.info(f"📨 Callback от {update.effective_user.id}: {update.callback_query.data}")
+        
+        # Обрабатываем обновление
+        await application.process_update(update)
+        
+        return web.Response(text="OK")
+        
+    except Exception as e:
+        logger.error(f"🚨 Ошибка в обработке вебхука: {e}")
+        return web.Response(text="ERROR", status=500)
+
+async def startup(app):
+    """Запуск приложения"""
+    logger.info("🚀 Запуск бота...")
+    
+    # Инициализация БД
+    try:
+        await Database.init_database()
+        logger.info("✅ База данных инициализирована")
+    except Exception as e:
+        logger.error(f"❌ Ошибка инициализации БД: {e}")
+    
+    # Настройка обработчиков
+    setup_handlers()
+    
+    # Запуск бота
+    await application.initialize()
+    
+    # Установка вебхука
+    await set_webhook()
+    
+    # Запуск фоновых задач (например, напоминаний)
+    # application.job_queue.run_repeating(...)
+    
+    logger.info(f"✅ Бот запущен на порту {PORT}")
+
+async def shutdown(app):
+    """Завершение работы"""
+    logger.info("🛑 Остановка бота...")
+    
+    # Останавливаем бота
+    await application.stop()
+    await application.shutdown()
+    
+    # Закрываем пул БД
+    await Database.close_pool()
+    
+    logger.info("✅ Бот остановлен")
+
+def create_app():
+    """Создание aiohttp приложения"""
+    app = web.Application()
+    
+    # Регистрация маршрутов
+    app.router.add_get('/', health_check)
+    app.router.add_post('/webhook', handle_webhook)
+    app.router.add_get('/health', health_check)
+    
+    # Регистрация событий жизненного цикла
+    app.on_startup.append(startup)
+    app.on_shutdown.append(shutdown)
+    
+    return app
+
+async def polling_mode():
+    """Режим polling для разработки"""
+    logger.info("🔄 Запуск в режиме polling...")
+    
+    # Инициализация БД
+    await Database.init_database()
+    logger.info("✅ База данных инициализирована")
+    
+    # Настройка обработчиков
+    setup_handlers()
+    
+    # Запуск бота
+    await application.initialize()
+    await application.start()
+    
+    # Ожидание остановки
+    try:
+        await application.updater.start_polling()
+        logger.info("✅ Бот запущен в режиме polling")
+        
+        # Бесконечное ожидание
+        while True:
+            await asyncio.sleep(3600)
+            
+    except KeyboardInterrupt:
+        logger.info("🛑 Получен сигнал остановки")
+    finally:
+        await application.stop()
+        await application.shutdown()
+        await Database.close_pool()
+
+def main():
+    """Главная функция"""
+    # Проверяем, нужен ли вебхук
+    if WEBHOOK_URL:
+        # Режим с вебхуком (продакшн)
+        app = create_app()
+        web.run_app(app, host='0.0.0.0', port=PORT)
+    else:
+        # Режим polling (разработка)
+        asyncio.run(polling_mode())
+
+if __name__ == '__main__':
+    main()
